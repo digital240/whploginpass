@@ -1,4 +1,4 @@
- // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 //  WHPLoginPass — Backend Server
 //  Node.js + Express
 //  Routes: /auth  /auth/callback  /send-otp  /verify-otp
@@ -166,44 +166,67 @@ function shopifyApi(shopDomain, accessToken) {
   };
 }
 
-// ── SMSALERT — SEND OTP ───────────────────────────────────
-// Uses SMSAlert's built-in OTP API (mverify.json)
-// SMSAlert generates & tracks the OTP — we don't store it ourselves
+// ── OTP HELPERS ──────────────────────────────────────────
+// We generate OTP ourselves and send via SMSAlert push.json
+// This avoids DLT template registration requirement
+
+function generateOtp(length) {
+  length = length || 6;
+  let otp = '';
+  for (let i = 0; i < length; i++) otp += Math.floor(Math.random() * 10);
+  return otp;
+}
+
+// ── SMSALERT — SEND OTP via push.json ────────────────────
+// Uses regular SMS API — we generate OTP and store in cache
 async function sendOtpViaSMSAlert(phone) {
   const apiKey  = process.env.SMSALERT_API_KEY;
   const sender  = process.env.SMSALERT_SENDER_ID;
+  const length  = parseInt(process.env.OTP_LENGTH) || 6;
 
-  // SMSAlert OTP API — simple [otp] tag, no extra attributes
-  // Per SMSAlert docs: template must contain [otp] tag exactly
-  const template = encodeURIComponent('Your OTP is [otp]. Valid for 10 minutes. -WHPLoginPass');
+  if (!apiKey) throw new Error('SMSALERT_API_KEY not set in environment');
+  if (!sender) throw new Error('SMSALERT_SENDER_ID not set in environment');
 
-  const url = `http://www.smsalert.co.in/api/mverify.json?apikey=${apiKey}&sender=${sender}&mobileno=${phone}&template=${template}`;
+  // Generate OTP ourselves
+  const otp = generateOtp(length);
 
-  console.log(`[SMSAlert] Sending OTP to ${phone}`);
-  console.log(`[SMSAlert] URL: ${url}`);
+  // Store OTP in cache keyed by phone
+  cache.set(`otp_code:${phone}`, otp, 600); // 10 min expiry
 
-  const res = await axios.post(url);
+  const message = encodeURIComponent(`Your WHPLoginPass OTP is ${otp}. Valid for 10 minutes. Do not share with anyone.`);
+
+  const url = `https://www.smsalert.co.in/api/push.json?apikey=${apiKey}&sender=${sender}&mobileno=${phone}&text=${message}`;
+
+  console.log(`[SMSAlert] Sending OTP ${otp} to ${phone}`);
+
+  const res = await axios.post(url, null, { timeout: 15000 });
+
   console.log(`[SMSAlert] Response:`, JSON.stringify(res.data));
-  return res.data;
+
+  if (res.data.status !== 'success') {
+    throw new Error(res.data.description?.desc || 'SMS send failed');
+  }
+
+  return { status: 'success', otp }; // return otp so we can store it
 }
 
-// ── SMSALERT — VALIDATE OTP ───────────────────────────────
-// SMSAlert validates the OTP on their server — we just ask them
+// ── VALIDATE OTP — check our cache ───────────────────────
 async function validateOtpViaSMSAlert(phone, otp) {
-  const apiKey = process.env.SMSALERT_API_KEY;
-  const url    = `http://www.smsalert.co.in/api/mverify.json?apikey=${apiKey}&mobileno=${phone}&code=${otp}`;
+  const storedOtp = cache.get(`otp_code:${phone}`);
 
-  const res  = await axios.post(url);
-  const data = res.data;
+  console.log(`[OTP Validate] phone=${phone} entered=${otp} stored=${storedOtp}`);
 
-  // SMSAlert returns status:"success" + desc:"Code Matched." on success
-  // and status:"success" + desc:"Code does not match." on failure
-  const matched =
-    data.status === 'success' &&
-    data.description &&
-    String(data.description.desc).toLowerCase().includes('matched');
+  if (!storedOtp) {
+    return { matched: false, raw: { desc: 'OTP expired' } };
+  }
 
-  return { raw: data, matched };
+  const matched = String(storedOtp) === String(otp);
+
+  if (matched) {
+    cache.del(`otp_code:${phone}`); // clear after successful use
+  }
+
+  return { matched, raw: { stored: storedOtp, entered: otp } };
 }
 
 // ══════════════════════════════════════════════════════════
