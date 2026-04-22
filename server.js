@@ -199,15 +199,14 @@ async function sendOtpViaSMSAlert(phone) {
 
   console.log(`[SMSAlert] Sending OTP ${otp} to ${phone} via WHPECM`);
 
+  // Send via SMSAlert — let it auto-match DLT template
   const res = await axios.post('https://www.smsalert.co.in/api/push.json', null, {
     params: {
-      apikey:    apiKey,
-      sender:    'WHPECM',
-      mobileno:  phone,
-      text:      message,
-      route:     'transactional',
-      pe_id:     '1701163577173453876',
-      template_id: '1707163577173453876'
+      apikey:   apiKey,
+      sender:   'WHPECM',
+      mobileno: phone,
+      text:     message,
+      route:    'transscrub'
     },
     timeout: 15000
   });
