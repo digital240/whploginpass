@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════════════════════
 //  WHPLoginPass — Backend Server
 //  Node.js + Express
-//  Routes: /send-otp  /verify-otp  /create-customer  /update-email
+//  Routes: /auth  /auth/callback  /send-otp  /verify-otp
+//          /create-customer  /update-email
 // ═══════════════════════════════════════════════════════════
 
 require('dotenv').config();
@@ -11,12 +12,17 @@ const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
 const NodeCache  = require('node-cache');
 const axios      = require('axios');
+const crypto     = require('crypto');
 
-const app   = express();
-const cache = new NodeCache({ stdTTL: 600 }); // 10 min default TTL
+const app        = express();
+const cache      = new NodeCache({ stdTTL: 600 });
+
+// Store access tokens in memory (use Redis/DB in production)
+// key: shop domain → value: access token
+const tokenStore = {};
 
 // ── MIDDLEWARE ───────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS === '*'
@@ -25,6 +31,104 @@ app.use(cors({
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'x-shop-domain']
 }));
+
+// ══════════════════════════════════════════════════════════
+//  OAUTH ROUTE 1 — /auth
+//  Shopify redirects here when merchant installs app
+//  We redirect to Shopify permission page
+// ══════════════════════════════════════════════════════════
+app.get('/auth', (req, res) => {
+  const shop = req.query.shop || process.env.SHOPIFY_SHOP_DOMAIN;
+  if (!shop) return res.status(400).send('Missing shop parameter');
+
+  const apiKey    = process.env.SHOPIFY_API_KEY;
+  const scopes    = 'read_customers,write_customers';
+  const redirectUri = `${process.env.APP_URL || 'https://whploginpass.onrender.com'}/auth/callback`;
+  const state     = crypto.randomBytes(16).toString('hex');
+
+  // Store state to verify later
+  cache.set(`oauth_state:${state}`, shop, 600);
+
+  const authUrl = `https://${shop}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+
+  console.log(`[OAuth] Redirecting to: ${authUrl}`);
+  res.redirect(authUrl);
+});
+
+// ══════════════════════════════════════════════════════════
+//  OAUTH ROUTE 2 — /auth/callback
+//  Shopify calls this with the auth code
+//  We exchange it for a permanent access token
+// ══════════════════════════════════════════════════════════
+app.get('/auth/callback', async (req, res) => {
+  const { shop, code, state, hmac } = req.query;
+
+  // Verify state
+  const storedShop = cache.get(`oauth_state:${state}`);
+  if (!storedShop) {
+    return res.status(403).send('Invalid state. Please try installing again.');
+  }
+  cache.del(`oauth_state:${state}`);
+
+  // Verify HMAC signature from Shopify
+  const apiSecret = process.env.SHOPIFY_API_SECRET;
+  const params    = Object.keys(req.query)
+    .filter(k => k !== 'hmac')
+    .sort()
+    .map(k => `${k}=${req.query[k]}`)
+    .join('&');
+  const digest = crypto.createHmac('sha256', apiSecret).update(params).digest('hex');
+
+  if (digest !== hmac) {
+    return res.status(403).send('HMAC verification failed.');
+  }
+
+  try {
+    // Exchange code for permanent access token
+    const tokenRes = await axios.post(`https://${shop}/admin/oauth/access_token`, {
+      client_id:     process.env.SHOPIFY_API_KEY,
+      client_secret: process.env.SHOPIFY_API_SECRET,
+      code
+    });
+
+    const accessToken = tokenRes.data.access_token;
+
+    // Store token (in memory — persists until server restart)
+    tokenStore[shop] = accessToken;
+
+    console.log(`[OAuth] ✅ Token obtained for ${shop}`);
+    console.log(`[OAuth] Token: ${accessToken}`);
+
+    // Show success page
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>WHPLoginPass Installed</title>
+      <style>
+        body{font-family:sans-serif;text-align:center;padding:60px;background:#faf8f8}
+        h1{color:#b97079}
+        .token{background:#1a1714;color:#b97079;padding:16px;border-radius:8px;
+               font-family:monospace;font-size:14px;word-break:break-all;margin:20px auto;max-width:600px}
+        .note{color:#888;font-size:13px;margin-top:16px}
+      </style>
+      </head>
+      <body>
+        <h1>✅ WHPLoginPass Installed!</h1>
+        <p>Your access token for <strong>${shop}</strong>:</p>
+        <div class="token">${accessToken}</div>
+        <p class="note">⚠️ Copy this token and add it to your Render environment variables as:<br>
+        <strong>SHOPIFY_ACCESS_TOKEN</strong></p>
+        <p class="note">Also add it to your theme.liquid in the WLP config:<br>
+        <strong>accessToken: '${accessToken}'</strong></p>
+      </body>
+      </html>
+    `);
+
+  } catch (err) {
+    console.error('[OAuth callback error]', err.response?.data || err.message);
+    res.status(500).send('OAuth failed: ' + (err.response?.data?.error_description || err.message));
+  }
+});
 
 // Rate limiter — max 5 OTP requests per phone per 10 min
 const otpLimiter = rateLimit({
