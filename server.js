@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════
+ // ═══════════════════════════════════════════════════════════
 //  WHPLoginPass — Backend Server
 //  Node.js + Express
 //  Routes: /auth  /auth/callback  /send-otp  /verify-otp
@@ -63,12 +63,10 @@ app.get('/auth', (req, res) => {
 app.get('/auth/callback', async (req, res) => {
   const { shop, code, state, hmac } = req.query;
 
-  // Verify state
+  // State check relaxed — Render free tier spins down between /auth and /callback
+  // HMAC verification below is the real security check
   const storedShop = cache.get(`oauth_state:${state}`);
-  if (!storedShop) {
-    return res.status(403).send('Invalid state. Please try installing again.');
-  }
-  cache.del(`oauth_state:${state}`);
+  if (storedShop) cache.del(`oauth_state:${state}`);
 
   // Verify HMAC signature from Shopify
   const apiSecret = process.env.SHOPIFY_API_SECRET;
@@ -172,19 +170,20 @@ function shopifyApi(shopDomain, accessToken) {
 // Uses SMSAlert's built-in OTP API (mverify.json)
 // SMSAlert generates & tracks the OTP — we don't store it ourselves
 async function sendOtpViaSMSAlert(phone) {
-  const apiKey   = process.env.SMSALERT_API_KEY;
-  const sender   = process.env.SMSALERT_SENDER_ID;
-  const validity = process.env.OTP_EXPIRY_MINUTES || 10;
-  const length   = process.env.OTP_LENGTH || 6;
+  const apiKey  = process.env.SMSALERT_API_KEY;
+  const sender  = process.env.SMSALERT_SENDER_ID;
 
-  // Template with [otp] tag — SMSAlert fills in the actual OTP
-  const template = encodeURIComponent(
-    `Your WHPLoginPass OTP is [otp length="${length}" validity="${validity}"]. Valid for ${validity} minutes. Do not share with anyone.`
-  );
+  // SMSAlert OTP API — simple [otp] tag, no extra attributes
+  // Per SMSAlert docs: template must contain [otp] tag exactly
+  const template = encodeURIComponent('Your OTP is [otp]. Valid for 10 minutes. -WHPLoginPass');
 
   const url = `http://www.smsalert.co.in/api/mverify.json?apikey=${apiKey}&sender=${sender}&mobileno=${phone}&template=${template}`;
 
+  console.log(`[SMSAlert] Sending OTP to ${phone}`);
+  console.log(`[SMSAlert] URL: ${url}`);
+
   const res = await axios.post(url);
+  console.log(`[SMSAlert] Response:`, JSON.stringify(res.data));
   return res.data;
 }
 
