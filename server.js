@@ -193,13 +193,24 @@ async function sendOtpViaSMSAlert(phone) {
   // Store OTP in cache keyed by phone
   cache.set(`otp_code:${phone}`, otp, 600); // 10 min expiry
 
-  const message = encodeURIComponent(`Your WHPLoginPass OTP is ${otp}. Valid for 10 minutes. Do not share with anyone.`);
+  // Using DLT registered template: "Dear User, Your WHP Jewellers website verification code is {#var#}"
+  // DLT Template ID: 1707163577173453876, Sender: WHPECM
+  const message = `Dear User, Your WHP Jewellers website verification code is ${otp}`;
 
-  const url = `https://www.smsalert.co.in/api/push.json?apikey=${apiKey}&sender=${sender}&mobileno=${phone}&text=${message}`;
+  console.log(`[SMSAlert] Sending OTP ${otp} to ${phone} via WHPECM`);
 
-  console.log(`[SMSAlert] Sending OTP ${otp} to ${phone}`);
-
-  const res = await axios.post(url, null, { timeout: 15000 });
+  const res = await axios.post('https://www.smsalert.co.in/api/push.json', null, {
+    params: {
+      apikey:    apiKey,
+      sender:    'WHPECM',
+      mobileno:  phone,
+      text:      message,
+      route:     'transactional',
+      pe_id:     '1701163577173453876',
+      template_id: '1707163577173453876'
+    },
+    timeout: 15000
+  });
 
   console.log(`[SMSAlert] Response:`, JSON.stringify(res.data));
 
