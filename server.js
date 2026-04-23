@@ -363,26 +363,37 @@ app.post('/api/verify-otp', async (req, res) => {
             console.log(`[verify-otp] ✅ Existing customer: id=${existing.id} email=${existing.email} phone=${existing.phone}`);
 
             // Get login URL
-            // Generate a new temp password and set it on the customer
-            // Then return credentials for auto-login via storefront
-            const tempPassword = 'WLP' + cleanPhone + Date.now().toString().slice(-6) + '!';
+            // For active customers on New Customer Accounts:
+            // Generate account activation URL by temporarily deactivating account
             try {
+              // Step 1: Disable the customer account
               await axios.put(
                 `${base}/customers/${existing.id}.json`,
-                { customer: { id: existing.id, password: tempPassword, password_confirmation: tempPassword } },
+                { customer: { id: existing.id, state: 'disabled' } },
                 { headers }
               );
-              console.log(`[verify-otp] ✅ Temp password set for customer ${existing.id}`);
-              existingLoginUrl = '/account/login';
-              // Pass credentials for auto-login
-              isExistingUser = true;
-              // Store temp credentials in cache
-              cache.set(`autologin:${cleanPhone}`, {
-                email: existing.email,
-                password: tempPassword
-              }, 120); // 2 min expiry
+
+              // Step 2: Get fresh activation URL
+              const tokenRes = await axios.post(
+                `${base}/customers/${existing.id}/account_activation_url.json`,
+                {},
+                { headers }
+              );
+              existingLoginUrl = tokenRes.data.account_activation_url || '/account';
+              console.log(`[verify-otp] ✅ Fresh activation URL generated`);
             } catch(e) {
-              console.log('[verify-otp] Could not set temp password:', e.message);
+              console.log('[verify-otp] Activation URL approach failed:', e.message);
+              // Final fallback — send password reset email
+              try {
+                await axios.post(
+                  `${base}/customers/${existing.id}/send_invite.json`,
+                  {},
+                  { headers }
+                );
+                existingLoginUrl = 'password_reset_sent';
+              } catch(e2) {
+                existingLoginUrl = '/account';
+              }
             }
             break;
           }
@@ -394,17 +405,12 @@ app.post('/api/verify-otp', async (req, res) => {
 
     cache.set(cacheKey, stored, 300); // keep 5 more mins
 
-    // Get auto-login credentials if available
-    const autoLogin = cache.get(`autologin:${cleanPhone}`);
-
     return res.json({
       success:        true,
       message:        'OTP verified!',
       phone:          cleanPhone,
       isExistingUser: isExistingUser,
-      loginUrl:       isExistingUser ? existingLoginUrl : null,
-      autoEmail:      autoLogin ? autoLogin.email : null,
-      autoPassword:   autoLogin ? autoLogin.password : null
+      loginUrl:       isExistingUser ? existingLoginUrl : null
     });
 
   } catch (err) {
