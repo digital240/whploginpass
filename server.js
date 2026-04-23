@@ -518,16 +518,28 @@ app.post('/api/create-customer', async (req, res) => {
       loginUrl = tokenRes.data.account_activation_url || '/account';
     } catch (e) { /* use /account fallback */ }
 
+    // Create WLP session token (GoKwik-style)
+    const wlpToken = createWlpToken({
+      id:        customer.id,
+      email:     customer.email,
+      phone:     cleanPhone,
+      firstName: customer.first_name,
+      lastName:  customer.last_name,
+      isTemp:    isTemp,
+      shop:      shopDomain
+    });
+
     return res.json({
-      success:    true,
-      customer:   {
-        id:         customer.id,
-        email:      customer.email,
-        firstName:  customer.first_name,
-        lastName:   customer.last_name,
-        phone:      customer.phone,
-        isTemp:     isTemp,
-        tempEmail:  isTemp ? finalEmail : null
+      success:  true,
+      wlpToken: wlpToken,
+      customer: {
+        id:        customer.id,
+        email:     customer.email,
+        firstName: customer.first_name,
+        lastName:  customer.last_name,
+        phone:     customer.phone,
+        isTemp:    isTemp,
+        tempEmail: isTemp ? finalEmail : null
       },
       loginUrl
     });
@@ -587,6 +599,140 @@ app.post('/api/update-email', async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════
+//  ROUTE 5 — SAVE DEVICE TOKEN
+//  POST /api/save-device
+//  Called after successful OTP — saves device+phone mapping
+// ══════════════════════════════════════════════════════════
+app.post('/api/save-device', async (req, res) => {
+  try {
+    const { phone, deviceToken, shop } = req.body;
+    if (!phone || !deviceToken) return res.status(400).json({ success: false });
+
+    const cleanPhone = sanitizePhone(phone);
+
+    // Store device token → phone mapping (30 days)
+    cache.set(`device:${deviceToken}`, {
+      phone:     cleanPhone,
+      shop:      shop,
+      createdAt: Date.now()
+    }, 30 * 24 * 60 * 60); // 30 days
+
+    console.log(`[Device] Saved token for +91${cleanPhone}`);
+    return res.json({ success: true });
+  } catch(err) {
+    return res.status(500).json({ success: false });
+  }
+});
+
+// ══════════════════════════════════════════════════════════
+//  ROUTE 6 — CHECK DEVICE TOKEN
+//  POST /api/check-device
+//  Called on page load — if device known, skip OTP
+// ══════════════════════════════════════════════════════════
+app.post('/api/check-device', async (req, res) => {
+  try {
+    const { deviceToken, shop } = req.body;
+    if (!deviceToken) return res.json({ known: false });
+
+    const stored = cache.get(`device:${deviceToken}`);
+    if (!stored) return res.json({ known: false });
+
+    const cleanPhone  = stored.phone;
+    const shopDomain  = shop || process.env.SHOPIFY_SHOP_DOMAIN;
+    const accessToken = process.env.SHOPIFY_ACCESS_TOKEN || tokenStore[shopDomain];
+
+    if (!accessToken) return res.json({ known: false });
+
+    // Find customer in Shopify
+    const { base, headers } = shopifyApi(shopDomain, accessToken);
+    const searchRes = await axios.get(
+      `${base}/customers/search.json?query=phone:+91${cleanPhone}&fields=id,email,first_name,phone`,
+      { headers }
+    );
+
+    if (!searchRes.data.customers || searchRes.data.customers.length === 0) {
+      return res.json({ known: false });
+    }
+
+    const customer = searchRes.data.customers[0];
+    console.log(`[Device] Known device → customer ${customer.id} +91${cleanPhone}`);
+
+    return res.json({
+      known:     true,
+      phone:     cleanPhone,
+      email:     customer.email,
+      firstName: customer.first_name,
+      customerId: customer.id
+    });
+
+  } catch(err) {
+    console.error('[check-device error]', err.message);
+    return res.json({ known: false });
+  }
+});
+
+
+// ======================================================
+//  WLP TOKEN SYSTEM (GoKwik-style kpToken)
+// ======================================================
+
+const WLP_TOKEN_SECRET = process.env.WLP_TOKEN_SECRET || 'whploginpass_secret_key_2025';
+
+function createWlpToken(data) {
+  const payload = JSON.stringify({
+    id:        data.id        || '',
+    email:     data.email     || '',
+    phone:     data.phone     || '',
+    firstName: data.firstName || data.first_name || '',
+    lastName:  data.lastName  || data.last_name  || '',
+    isTemp:    data.isTemp    || false,
+    shop:      data.shop      || '',
+    iat:       Date.now(),
+    exp:       Date.now() + (30 * 24 * 60 * 60 * 1000)
+  });
+  const encoded = Buffer.from(payload).toString('base64url');
+  const sig     = require('crypto').createHmac('sha256', WLP_TOKEN_SECRET).update(encoded).digest('hex').substring(0,16);
+  return encoded + '.' + sig;
+}
+
+function decodeWlpToken(token) {
+  try {
+    if (!token) return null;
+    const [encoded, sig] = token.split('.');
+    if (!encoded || !sig) return null;
+    const expected = require('crypto').createHmac('sha256', WLP_TOKEN_SECRET).update(encoded).digest('hex').substring(0,16);
+    if (sig !== expected) return null;
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString());
+    if (payload.exp < Date.now()) return null;
+    return payload;
+  } catch(e) { return null; }
+}
+
+// Route: verify token
+app.post('/api/verify-token', (req, res) => {
+  const data = decodeWlpToken(req.body.token);
+  if (!data) return res.json({ valid: false });
+  return res.json({ valid: true, customer: data });
+});
+
+// Route: save device (30 day memory)
+app.post('/api/save-device', (req, res) => {
+  const { phone, deviceToken, shop, wlpToken } = req.body;
+  if (deviceToken && phone) {
+    cache.set('device:' + deviceToken, { phone, shop, wlpToken }, 30 * 24 * 3600);
+  }
+  return res.json({ success: true });
+});
+
+// Route: check device
+app.post('/api/check-device', (req, res) => {
+  const { deviceToken } = req.body;
+  const data = cache.get('device:' + deviceToken);
+  if (data) return res.json({ known: true, phone: data.phone, wlpToken: data.wlpToken });
+  return res.json({ known: false });
+});
+
 // ── HEALTH CHECK ─────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', app: 'WHPLoginPass' }));
 
@@ -595,4 +741,3 @@ const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`✅ WHPLoginPass backend running on port ${PORT}`);
 });
-
