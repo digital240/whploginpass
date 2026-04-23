@@ -328,9 +328,51 @@ app.post('/api/verify-otp', async (req, res) => {
 
     // ✅ OTP is correct — mark as verified
     stored.verified = true;
-    cache.set(cacheKey, stored, 300); // keep 5 more mins to complete profile
 
-    return res.json({ success: true, message: 'OTP verified!', phone: cleanPhone });
+    // Check if customer already exists in Shopify
+    let isExistingUser = false;
+    let existingCustomerId = null;
+    let existingLoginUrl = '/account';
+
+    const shopDomain   = stored.shop || process.env.SHOPIFY_SHOP_DOMAIN;
+    const accessToken  = tokenStore[shopDomain] || process.env.SHOPIFY_ACCESS_TOKEN;
+
+    if (shopDomain && accessToken) {
+      try {
+        const { base, headers } = shopifyApi(shopDomain, accessToken);
+        const searchRes = await axios.get(
+          `${base}/customers/search.json?query=phone:+91${cleanPhone}&fields=id,email,first_name`,
+          { headers }
+        );
+        if (searchRes.data.customers && searchRes.data.customers.length > 0) {
+          const existing = searchRes.data.customers[0];
+          isExistingUser    = true;
+          existingCustomerId = existing.id;
+
+          // Get login URL for existing customer
+          try {
+            const tokenRes = await axios.post(
+              `${base}/customers/${existing.id}/account_activation_url.json`,
+              {},
+              { headers }
+            );
+            existingLoginUrl = tokenRes.data.account_activation_url || '/account';
+          } catch(e) { /* use /account fallback */ }
+        }
+      } catch(e) {
+        console.log('[verify-otp] Could not check existing user:', e.message);
+      }
+    }
+
+    cache.set(cacheKey, stored, 300); // keep 5 more mins
+
+    return res.json({
+      success:        true,
+      message:        'OTP verified!',
+      phone:          cleanPhone,
+      isExistingUser: isExistingUser,
+      loginUrl:       isExistingUser ? existingLoginUrl : null
+    });
 
   } catch (err) {
     console.error('[verify-otp error]', err.message);
@@ -373,11 +415,11 @@ app.post('/api/create-customer', async (req, res) => {
 
     const { base, headers } = shopifyApi(shop, accessToken);
 
-    // Check if customer with this phone or email already exists
+    // Check if customer with this phone already exists
     let existingCustomer = null;
     try {
       const searchRes = await axios.get(
-        `${base}/customers/search.json?query=phone:+91${cleanPhone}&fields=id,email,phone,first_name,last_name`,
+        `${base}/customers/search.json?query=phone:+91${cleanPhone}&fields=id,email,phone,first_name,last_name,tags`,
         { headers }
       );
       if (searchRes.data.customers && searchRes.data.customers.length > 0) {
@@ -388,34 +430,10 @@ app.post('/api/create-customer', async (req, res) => {
     let customer;
 
     if (existingCustomer) {
-      // Update existing customer
-      const updateRes = await axios.put(
-        `${base}/customers/${existingCustomer.id}.json`,
-        {
-          customer: {
-            id:         existingCustomer.id,
-            first_name: firstName,
-            last_name:  lastName || '',
-            phone:      `+91${cleanPhone}`,
-            email:      existingCustomer.email.includes('@') && !existingCustomer.email.startsWith(cleanPhone)
-              ? existingCustomer.email  // keep real email
-              : finalEmail,
-            addresses: [{
-              address1: address1,
-              address2: address2 || '',
-              city:     city,
-              province: state || '',
-              zip:      pincode,
-              country:  country || 'India',
-              phone:    `+91${cleanPhone}`,
-              default:  true
-            }],
-            tags: isTemp ? 'whploginpass,temp-email' : 'whploginpass'
-          }
-        },
-        { headers }
-      );
-      customer = updateRes.data.customer;
+      // ── EXISTING USER — just log them in, no profile update needed ──
+      customer = existingCustomer;
+      console.log(`[WHPLoginPass] Existing customer found: ${customer.id} — ${customer.email}`);
+
     } else {
       // Create new customer
       const createRes = await axios.post(
