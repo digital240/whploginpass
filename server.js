@@ -341,24 +341,38 @@ app.post('/api/verify-otp', async (req, res) => {
     if (shopDomain && accessToken) {
       try {
         const { base, headers } = shopifyApi(shopDomain, accessToken);
-        const searchRes = await axios.get(
-          `${base}/customers/search.json?query=phone:+91${cleanPhone}&fields=id,email,first_name`,
-          { headers }
-        );
-        if (searchRes.data.customers && searchRes.data.customers.length > 0) {
-          const existing = searchRes.data.customers[0];
-          isExistingUser    = true;
-          existingCustomerId = existing.id;
 
-          // Get login URL for existing customer
-          try {
-            const tokenRes = await axios.post(
-              `${base}/customers/${existing.id}/account_activation_url.json`,
-              {},
-              { headers }
-            );
-            existingLoginUrl = tokenRes.data.account_activation_url || '/account';
-          } catch(e) { /* use /account fallback */ }
+        // Search with multiple phone formats to find existing customer
+        const phoneFormats = [
+          `phone:+91${cleanPhone}`,
+          `phone:91${cleanPhone}`,
+          `phone:${cleanPhone}`
+        ];
+
+        for (const query of phoneFormats) {
+          const searchRes = await axios.get(
+            `${base}/customers/search.json?query=${encodeURIComponent(query)}&fields=id,email,first_name,phone`,
+            { headers }
+          );
+          console.log(`[verify-otp] Search "${query}" → found: ${searchRes.data.customers?.length || 0}`);
+
+          if (searchRes.data.customers && searchRes.data.customers.length > 0) {
+            const existing = searchRes.data.customers[0];
+            isExistingUser     = true;
+            existingCustomerId = existing.id;
+            console.log(`[verify-otp] ✅ Existing customer: id=${existing.id} email=${existing.email} phone=${existing.phone}`);
+
+            // Get login URL
+            try {
+              const tokenRes = await axios.post(
+                `${base}/customers/${existing.id}/account_activation_url.json`,
+                {},
+                { headers }
+              );
+              existingLoginUrl = tokenRes.data.account_activation_url || '/account';
+            } catch(e) { /* use /account fallback */ }
+            break; // found — stop searching
+          }
         }
       } catch(e) {
         console.log('[verify-otp] Could not check existing user:', e.message);
