@@ -362,14 +362,22 @@ app.post('/api/verify-otp', async (req, res) => {
             existingCustomerId = existing.id;
             console.log(`[verify-otp] ✅ Existing customer: id=${existing.id} email=${existing.email} phone=${existing.phone}`);
 
-            // Get login URL
-            // New Customer Accounts: redirect to Shopify login with email pre-filled
-            // User verifies identity via OTP, then completes Shopify login with their email
+            // Create WLP token immediately from search data (no extra API call needed!)
             existingLoginUrl = 'otp_verified';
-            console.log(`[verify-otp] ✅ OTP verified for existing customer ${existing.id} - ${existing.email}`);
-
-            // Store verified email in cache so frontend can pre-fill Shopify login
             cache.set(`verified_email:${cleanPhone}`, existing.email, 300);
+
+            // Create wlpToken here - use data we already have
+            const wlpTokForExisting = createWlpToken({
+              id:        existing.id,
+              email:     existing.email,
+              phone:     cleanPhone,
+              firstName: existing.first_name || '',
+              lastName:  existing.last_name  || '',
+              isTemp:    existing.email && existing.email.startsWith(cleanPhone),
+              shop:      shopDomain
+            });
+            cache.set(`wlptoken:${cleanPhone}`, wlpTokForExisting, 300);
+            console.log(`[verify-otp] ✅ wlpToken created for existing customer`);
             break;
           }
         }
@@ -380,8 +388,9 @@ app.post('/api/verify-otp', async (req, res) => {
 
     cache.set(cacheKey, stored, 300); // keep 5 more mins
 
-    // Get verified email for existing users
-    const verifiedEmail = cache.get(`verified_email:${cleanPhone}`);
+    // Get verified email and wlpToken for existing users
+    const verifiedEmail   = cache.get(`verified_email:${cleanPhone}`);
+    const existingWlpToken = cache.get(`wlptoken:${cleanPhone}`);
 
     return res.json({
       success:        true,
@@ -389,7 +398,8 @@ app.post('/api/verify-otp', async (req, res) => {
       phone:          cleanPhone,
       isExistingUser: isExistingUser,
       loginUrl:       isExistingUser ? existingLoginUrl : null,
-      email:          verifiedEmail || null
+      email:          verifiedEmail   || null,
+      wlpToken:       existingWlpToken || null
     });
 
   } catch (err) {
