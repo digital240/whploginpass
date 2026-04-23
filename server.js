@@ -334,8 +334,9 @@ app.post('/api/verify-otp', async (req, res) => {
     let existingCustomerId = null;
     let existingLoginUrl = '/account';
 
-    const shopDomain   = stored.shop || process.env.SHOPIFY_SHOP_DOMAIN;
-    const accessToken  = tokenStore[shopDomain] || process.env.SHOPIFY_ACCESS_TOKEN;
+    const shopDomain  = stored.shop || process.env.SHOPIFY_SHOP_DOMAIN;
+    const accessToken = process.env.SHOPIFY_ACCESS_TOKEN || tokenStore[shopDomain];
+    console.log(`[verify-otp] shop=${shopDomain}, token=${accessToken ? accessToken.substring(0,10)+'...' : 'MISSING'}`);
 
     if (shopDomain && accessToken) {
       try {
