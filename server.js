@@ -363,38 +363,13 @@ app.post('/api/verify-otp', async (req, res) => {
             console.log(`[verify-otp] ✅ Existing customer: id=${existing.id} email=${existing.email} phone=${existing.phone}`);
 
             // Get login URL
-            // For active customers on New Customer Accounts:
-            // Generate account activation URL by temporarily deactivating account
-            try {
-              // Step 1: Disable the customer account
-              await axios.put(
-                `${base}/customers/${existing.id}.json`,
-                { customer: { id: existing.id, state: 'disabled' } },
-                { headers }
-              );
+            // New Customer Accounts: redirect to Shopify login with email pre-filled
+            // User verifies identity via OTP, then completes Shopify login with their email
+            existingLoginUrl = 'otp_verified';
+            console.log(`[verify-otp] ✅ OTP verified for existing customer ${existing.id} - ${existing.email}`);
 
-              // Step 2: Get fresh activation URL
-              const tokenRes = await axios.post(
-                `${base}/customers/${existing.id}/account_activation_url.json`,
-                {},
-                { headers }
-              );
-              existingLoginUrl = tokenRes.data.account_activation_url || '/account';
-              console.log(`[verify-otp] ✅ Fresh activation URL generated`);
-            } catch(e) {
-              console.log('[verify-otp] Activation URL approach failed:', e.message);
-              // Final fallback — send password reset email
-              try {
-                await axios.post(
-                  `${base}/customers/${existing.id}/send_invite.json`,
-                  {},
-                  { headers }
-                );
-                existingLoginUrl = 'password_reset_sent';
-              } catch(e2) {
-                existingLoginUrl = '/account';
-              }
-            }
+            // Store verified email in cache so frontend can pre-fill Shopify login
+            cache.set(`verified_email:${cleanPhone}`, existing.email, 300);
             break;
           }
         }
@@ -405,12 +380,16 @@ app.post('/api/verify-otp', async (req, res) => {
 
     cache.set(cacheKey, stored, 300); // keep 5 more mins
 
+    // Get verified email for existing users
+    const verifiedEmail = cache.get(`verified_email:${cleanPhone}`);
+
     return res.json({
       success:        true,
       message:        'OTP verified!',
       phone:          cleanPhone,
       isExistingUser: isExistingUser,
-      loginUrl:       isExistingUser ? existingLoginUrl : null
+      loginUrl:       isExistingUser ? existingLoginUrl : null,
+      email:          verifiedEmail || null
     });
 
   } catch (err) {
