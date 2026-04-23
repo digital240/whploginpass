@@ -21,6 +21,75 @@ const cache      = new NodeCache({ stdTTL: 600 });
 // key: shop domain → value: access token
 const tokenStore = {};
 
+// ======================================================
+//  WLP TOKEN SYSTEM (GoKwik-style kpToken)
+// ======================================================
+
+const WLP_TOKEN_SECRET = process.env.WLP_TOKEN_SECRET || 'whploginpass_secret_key_2025';
+
+function createWlpToken(data) {
+  const payload = JSON.stringify({
+    id:        data.id        || '',
+    email:     data.email     || '',
+    phone:     data.phone     || '',
+    firstName: data.firstName || data.first_name || '',
+    lastName:  data.lastName  || data.last_name  || '',
+    isTemp:    data.isTemp    || false,
+    shop:      data.shop      || '',
+    iat:       Date.now(),
+    exp:       Date.now() + (30 * 24 * 60 * 60 * 1000)
+  });
+  const encoded = Buffer.from(payload).toString('base64url');
+  const sig     = require('crypto').createHmac('sha256', WLP_TOKEN_SECRET).update(encoded).digest('hex').substring(0,16);
+  return encoded + '.' + sig;
+}
+
+function decodeWlpToken(token) {
+  try {
+    if (!token) return null;
+    const [encoded, sig] = token.split('.');
+    if (!encoded || !sig) return null;
+    const expected = require('crypto').createHmac('sha256', WLP_TOKEN_SECRET).update(encoded).digest('hex').substring(0,16);
+    if (sig !== expected) return null;
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString());
+    if (payload.exp < Date.now()) return null;
+    return payload;
+  } catch(e) { return null; }
+}
+
+// Route: verify token
+app.post('/api/verify-token', (req, res) => {
+  const data = decodeWlpToken(req.body.token);
+  if (!data) return res.json({ valid: false });
+  return res.json({ valid: true, customer: data });
+});
+
+// Route: save device (30 day memory)
+app.post('/api/save-device', (req, res) => {
+  const { phone, deviceToken, shop, wlpToken } = req.body;
+  if (deviceToken && phone) {
+    cache.set('device:' + deviceToken, { phone, shop, wlpToken }, 30 * 24 * 3600);
+  }
+  return res.json({ success: true });
+});
+
+// Route: check device
+app.post('/api/check-device', (req, res) => {
+  const { deviceToken } = req.body;
+  const data = cache.get('device:' + deviceToken);
+  if (data) return res.json({ known: true, phone: data.phone, wlpToken: data.wlpToken });
+  return res.json({ known: false });
+});
+
+// ── HEALTH CHECK ─────────────────────────────────────────
+app.get('/health', (req, res) => res.json({ status: 'ok', app: 'WHPLoginPass' }));
+
+// ── START ─────────────────────────────────────────────────
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`✅ WHPLoginPass backend running on port ${PORT}`);
+});
+
 // ── MIDDLEWARE ───────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
@@ -704,74 +773,7 @@ app.post('/api/check-device', async (req, res) => {
 });
 
 
-// ======================================================
-//  WLP TOKEN SYSTEM (GoKwik-style kpToken)
-// ======================================================
-
-const WLP_TOKEN_SECRET = process.env.WLP_TOKEN_SECRET || 'whploginpass_secret_key_2025';
-
-function createWlpToken(data) {
-  const payload = JSON.stringify({
-    id:        data.id        || '',
-    email:     data.email     || '',
-    phone:     data.phone     || '',
-    firstName: data.firstName || data.first_name || '',
-    lastName:  data.lastName  || data.last_name  || '',
-    isTemp:    data.isTemp    || false,
-    shop:      data.shop      || '',
-    iat:       Date.now(),
-    exp:       Date.now() + (30 * 24 * 60 * 60 * 1000)
-  });
-  const encoded = Buffer.from(payload).toString('base64url');
-  const sig     = require('crypto').createHmac('sha256', WLP_TOKEN_SECRET).update(encoded).digest('hex').substring(0,16);
-  return encoded + '.' + sig;
-}
-
-function decodeWlpToken(token) {
-  try {
-    if (!token) return null;
-    const [encoded, sig] = token.split('.');
-    if (!encoded || !sig) return null;
-    const expected = require('crypto').createHmac('sha256', WLP_TOKEN_SECRET).update(encoded).digest('hex').substring(0,16);
-    if (sig !== expected) return null;
-    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString());
-    if (payload.exp < Date.now()) return null;
-    return payload;
-  } catch(e) { return null; }
-}
-
-// Route: verify token
-app.post('/api/verify-token', (req, res) => {
-  const data = decodeWlpToken(req.body.token);
-  if (!data) return res.json({ valid: false });
-  return res.json({ valid: true, customer: data });
-});
-
-// Route: save device (30 day memory)
-app.post('/api/save-device', (req, res) => {
-  const { phone, deviceToken, shop, wlpToken } = req.body;
-  if (deviceToken && phone) {
-    cache.set('device:' + deviceToken, { phone, shop, wlpToken }, 30 * 24 * 3600);
-  }
-  return res.json({ success: true });
-});
-
-// Route: check device
-app.post('/api/check-device', (req, res) => {
-  const { deviceToken } = req.body;
-  const data = cache.get('device:' + deviceToken);
-  if (data) return res.json({ known: true, phone: data.phone, wlpToken: data.wlpToken });
-  return res.json({ known: false });
-});
-
-// ── HEALTH CHECK ─────────────────────────────────────────
-app.get('/health', (req, res) => res.json({ status: 'ok', app: 'WHPLoginPass' }));
-
-// ── START ─────────────────────────────────────────────────
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`✅ WHPLoginPass backend running on port ${PORT}`);
-});// Serve widget JS file (avoids Shopify smart-quote conversion issue)
+// Serve widget JS file (avoids Shopify smart-quote conversion issue)
 app.get('/wlp-widget.js', (req, res) => {
   const fs = require('fs');
   const path = require('path');
