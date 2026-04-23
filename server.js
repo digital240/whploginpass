@@ -363,18 +363,28 @@ app.post('/api/verify-otp', async (req, res) => {
             console.log(`[verify-otp] ✅ Existing customer: id=${existing.id} email=${existing.email} phone=${existing.phone}`);
 
             // Get login URL
+            // Generate a new temp password and set it on the customer
+            // Then return credentials for auto-login via storefront
+            const tempPassword = 'WLP' + cleanPhone + Date.now().toString().slice(-6) + '!';
             try {
-              const tokenRes = await axios.post(
-                `${base}/customers/${existing.id}/account_activation_url.json`,
-                {},
+              await axios.put(
+                `${base}/customers/${existing.id}.json`,
+                { customer: { id: existing.id, password: tempPassword, password_confirmation: tempPassword } },
                 { headers }
               );
-              existingLoginUrl = tokenRes.data.account_activation_url || '/account';
-              console.log(`[verify-otp] Login URL: ${existingLoginUrl}`);
+              console.log(`[verify-otp] ✅ Temp password set for customer ${existing.id}`);
+              existingLoginUrl = '/account/login';
+              // Pass credentials for auto-login
+              isExistingUser = true;
+              // Store temp credentials in cache
+              cache.set(`autologin:${cleanPhone}`, {
+                email: existing.email,
+                password: tempPassword
+              }, 120); // 2 min expiry
             } catch(e) {
-              console.log('[verify-otp] Could not get activation URL:', e.message);
+              console.log('[verify-otp] Could not set temp password:', e.message);
             }
-            break; // found — stop searching
+            break;
           }
         }
       } catch(e) {
@@ -384,12 +394,17 @@ app.post('/api/verify-otp', async (req, res) => {
 
     cache.set(cacheKey, stored, 300); // keep 5 more mins
 
+    // Get auto-login credentials if available
+    const autoLogin = cache.get(`autologin:${cleanPhone}`);
+
     return res.json({
       success:        true,
       message:        'OTP verified!',
       phone:          cleanPhone,
       isExistingUser: isExistingUser,
-      loginUrl:       isExistingUser ? existingLoginUrl : null
+      loginUrl:       isExistingUser ? existingLoginUrl : null,
+      autoEmail:      autoLogin ? autoLogin.email : null,
+      autoPassword:   autoLogin ? autoLogin.password : null
     });
 
   } catch (err) {
