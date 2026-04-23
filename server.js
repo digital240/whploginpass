@@ -390,7 +390,7 @@ app.post('/api/create-customer', async (req, res) => {
     const {
       phone, firstName, lastName,
       address1, address2, city, state, pincode, country,
-      email, shop, accessToken
+      email, shop
     } = req.body;
 
     const cleanPhone = sanitizePhone(phone);
@@ -407,13 +407,21 @@ app.post('/api/create-customer', async (req, res) => {
     }
 
     // Build email — use provided or generate temp
-    const finalEmail = email && email.trim()
+    const shopDomain  = shop || process.env.SHOPIFY_SHOP_DOMAIN;
+    const finalEmail  = email && email.trim()
       ? email.trim()
-      : buildTempEmail(cleanPhone, shop);
+      : buildTempEmail(cleanPhone, shopDomain);
+    const isTemp      = !email || !email.trim();
 
-    const isTemp = !email || !email.trim();
+    // Use server-side token — never trust token from frontend
+    const accessToken = tokenStore[shopDomain] || process.env.SHOPIFY_ACCESS_TOKEN;
+    if (!accessToken) {
+      console.error('[create-customer] No access token available for shop:', shopDomain);
+      return res.status(500).json({ success: false, message: 'App not properly configured. Contact support.' });
+    }
 
-    const { base, headers } = shopifyApi(shop, accessToken);
+    console.log(`[create-customer] Shop: ${shopDomain}, Token: ${accessToken.substring(0,10)}...`);
+    const { base, headers } = shopifyApi(shopDomain, accessToken);
 
     // Check if customer with this phone already exists
     let existingCustomer = null;
