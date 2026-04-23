@@ -57,6 +57,19 @@ function decodeWlpToken(token) {
   } catch(e) { return null; }
 }
 
+// ── HEALTH CHECK ─────────────────────────────────────────
+app.get('/health', (req, res) => res.json({ status: 'ok', app: 'WHPLoginPass' }));
+
+// ── START ─────────────────────────────────────────────────
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`✅ WHPLoginPass backend running on port ${PORT}`);
+});
+
+// ── MIDDLEWARE ───────────────────────────────────────────
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(express.json());
+
 // Route: verify token
 app.post('/api/verify-token', (req, res) => {
   const data = decodeWlpToken(req.body.token);
@@ -81,18 +94,7 @@ app.post('/api/check-device', (req, res) => {
   return res.json({ known: false });
 });
 
-// ── HEALTH CHECK ─────────────────────────────────────────
-app.get('/health', (req, res) => res.json({ status: 'ok', app: 'WHPLoginPass' }));
 
-// ── START ─────────────────────────────────────────────────
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`✅ WHPLoginPass backend running on port ${PORT}`);
-});
-
-// ── MIDDLEWARE ───────────────────────────────────────────
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json());
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS === '*'
     ? '*'
