@@ -456,10 +456,31 @@ app.post('/api/create-customer', async (req, res) => {
     let customer;
 
     if (existingCustomer) {
-      // ── EXISTING USER — just log them in, no profile update needed ──
-      customer = existingCustomer;
-      console.log(`[WHPLoginPass] Existing customer found: ${customer.id} — ${customer.email}`);
-
+      // Existing user — return wlpToken immediately, no update needed
+      const wlpTok = createWlpToken({
+        id:        existingCustomer.id,
+        email:     existingCustomer.email,
+        phone:     cleanPhone,
+        firstName: existingCustomer.first_name,
+        lastName:  existingCustomer.last_name,
+        isTemp:    existingCustomer.email && existingCustomer.email.startsWith(cleanPhone),
+        shop:      shopDomain
+      });
+      cache.del(cacheKey);
+      cache.del('attempts:' + cleanPhone);
+      return res.json({
+        success:  true,
+        wlpToken: wlpTok,
+        customer: {
+          id:        existingCustomer.id,
+          email:     existingCustomer.email,
+          firstName: existingCustomer.first_name,
+          lastName:  existingCustomer.last_name,
+          phone:     existingCustomer.phone,
+          isTemp:    false
+        },
+        loginUrl: '/account'
+      });
     } else {
       // Create new customer
       const createRes = await axios.post(
