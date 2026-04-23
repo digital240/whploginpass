@@ -370,7 +370,10 @@ app.post('/api/verify-otp', async (req, res) => {
                 { headers }
               );
               existingLoginUrl = tokenRes.data.account_activation_url || '/account';
-            } catch(e) { /* use /account fallback */ }
+              console.log(`[verify-otp] Login URL: ${existingLoginUrl}`);
+            } catch(e) {
+              console.log('[verify-otp] Could not get activation URL:', e.message);
+            }
             break; // found — stop searching
           }
         }
