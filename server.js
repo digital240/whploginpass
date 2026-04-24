@@ -340,6 +340,26 @@ app.post('/api/create-customer', async (req, res) => {
   }
 });
 
+// Get customer orders
+app.post('/api/get-orders', async (req, res) => {
+  try {
+    const { customerId, shop } = req.body;
+    if (!customerId) return res.json({ success: false, orders: [] });
+    const shopDomain  = shop || process.env.SHOPIFY_SHOP_DOMAIN;
+    const accessToken = process.env.SHOPIFY_ACCESS_TOKEN || tokenStore[shopDomain];
+    if (!accessToken) return res.json({ success: false, orders: [] });
+    const { base, headers } = shopifyApi(shopDomain, accessToken);
+    const ordersRes = await axios.get(
+      `${base}/customers/${customerId}/orders.json?status=any&fields=id,order_number,created_at,total_price,fulfillment_status,financial_status&limit=20`,
+      { headers }
+    );
+    return res.json({ success: true, orders: ordersRes.data.orders || [] });
+  } catch(err) {
+    console.error('[get-orders error]', err.message);
+    return res.json({ success: false, orders: [] });
+  }
+});
+
 // Update email
 app.post('/api/update-email', async (req, res) => {
   try {
