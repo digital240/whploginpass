@@ -96,11 +96,9 @@ app.post('/api/check-device', (req, res) => {
 
 
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS === '*'
-    ? '*'
-    : process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()),
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'x-shop-domain']
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-shop-domain', 'Authorization']
 }));
 
 // ══════════════════════════════════════════════════════════
