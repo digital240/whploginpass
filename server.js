@@ -374,6 +374,9 @@ app.post('/api/update-email', async (req, res) => {
   }
 });
 
-// Start server
 const PORT = process.env.PORT || 4000;
+
+// GMS Scheme routes
+require('./gms-routes')(app, cache);
+
 app.listen(PORT, () => console.log(`WHPLoginPass running on port ${PORT}`));
