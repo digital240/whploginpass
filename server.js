@@ -144,17 +144,27 @@ function generatePKCE() {
 // Returns the Shopify login URL to redirect user to
 app.post('/api/customer-auth/start', async (req, res) => {
   try {
-    const { phone, shop } = req.body;
+    const { phone, shop, wlpToken } = req.body;
     const cleanPhone = sanitizePhone(phone || '');
 
-    // Verify OTP was completed for this phone (check multiple cache keys)
+    // Accept request if: cached OTP verification OR valid wlpToken provided
     const cached = cache.get('wlptoken:' + cleanPhone) ||
                    cache.get('verified_email:' + cleanPhone) ||
                    cache.get('otp:' + cleanPhone);
-    // Also accept if we have a valid wlpToken in request body
-    if (!cached) {
-      console.log('[CustomerAPI] Cache miss for phone:', cleanPhone);
-      // Don't block - proceed anyway since OTP was verified on frontend
+
+    // Verify wlpToken if provided (for returning users)
+    let tokenValid = !!cached;
+    if (!tokenValid && wlpToken) {
+      const decoded = decodeWlpToken(wlpToken);
+      if (decoded && decoded.phone === cleanPhone) {
+        tokenValid = true;
+        console.log('[CustomerAPI] Verified via wlpToken for +91' + cleanPhone);
+      }
+    }
+
+    if (!tokenValid) {
+      console.log('[CustomerAPI] Auth rejected - no valid session for +91' + cleanPhone);
+      return res.status(401).json({ success: false, message: 'Session not verified.' });
     }
 
     const shopId = CUSTOMER_API_SHOP_ID;
@@ -509,4 +519,3 @@ app.post('/api/update-email', async (req, res) => {
 // Start server
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`WHPLoginPass running on port ${PORT}`));
-
