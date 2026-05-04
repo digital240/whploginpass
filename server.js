@@ -124,6 +124,133 @@ const otpLimiter = rateLimit({
 //  ROUTES
 // ══════════════════════════════════════════════════════════
 
+
+// ======================================================
+//  CUSTOMER ACCOUNT API - OAuth 2.0 with PKCE
+//  Creates real Shopify customer sessions!
+// ======================================================
+
+const CUSTOMER_API_CLIENT_ID = process.env.CUSTOMER_API_CLIENT_ID || 'ab642c75-5da0-4f16-94d3-8ef1d7aa5679';
+const CUSTOMER_API_SHOP_ID   = process.env.CUSTOMER_API_SHOP_ID   || '75385176202';
+
+// Generate PKCE code verifier and challenge
+function generatePKCE() {
+  const verifier  = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  return { verifier, challenge };
+}
+
+// Step 1: Start Customer Account OAuth - called after OTP verification
+// Returns the Shopify login URL to redirect user to
+app.post('/api/customer-auth/start', async (req, res) => {
+  try {
+    const { phone, shop } = req.body;
+    const cleanPhone = sanitizePhone(phone || '');
+
+    // Verify OTP was completed for this phone
+    const cached = cache.get('wlptoken:' + cleanPhone) || cache.get('verified_email:' + cleanPhone);
+    if (!cached) {
+      return res.status(401).json({ success: false, message: 'OTP not verified.' });
+    }
+
+    const shopId = CUSTOMER_API_SHOP_ID;
+    const { verifier, challenge } = generatePKCE();
+    const state   = crypto.randomBytes(16).toString('hex');
+    const nonce   = crypto.randomBytes(16).toString('hex');
+
+    // Store PKCE verifier and state (5 min expiry)
+    cache.set('pkce:' + state, { verifier, phone: cleanPhone, nonce }, 300);
+
+    const redirectUri = process.env.APP_URL + '/auth/customer/callback';
+    const authUrl = 'https://shopify.com/authentication/' + shopId + '/oauth/authorize' +
+      '?client_id=' + CUSTOMER_API_CLIENT_ID +
+      '&response_type=code' +
+      '&redirect_uri=' + encodeURIComponent(redirectUri) +
+      '&scope=openid+email+customer-account-api:full' +
+      '&state=' + state +
+      '&nonce=' + nonce +
+      '&code_challenge=' + challenge +
+      '&code_challenge_method=S256' +
+      '&locale=en-IN';
+
+    console.log('[CustomerAPI] Auth URL generated for +91' + cleanPhone);
+    return res.json({ success: true, authUrl });
+  } catch(err) {
+    console.error('[customer-auth/start]', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Step 2: OAuth Callback - Shopify redirects here with code
+app.get('/auth/customer/callback', async (req, res) => {
+  try {
+    const { code, state, error } = req.query;
+
+    if (error) {
+      console.error('[CustomerAPI callback] Error:', error);
+      return res.redirect('/?wlp_error=' + encodeURIComponent(error));
+    }
+
+    // Get PKCE verifier and phone from cache
+    const pkceData = cache.get('pkce:' + state);
+    if (!pkceData) {
+      return res.redirect('/?wlp_error=invalid_state');
+    }
+    cache.del('pkce:' + state);
+
+    const { verifier, phone } = pkceData;
+    const shopId    = CUSTOMER_API_SHOP_ID;
+    const redirectUri = process.env.APP_URL + '/auth/customer/callback';
+
+    // Exchange code for access token
+    const tokenRes = await axios.post(
+      'https://shopify.com/authentication/' + shopId + '/oauth/token',
+      new URLSearchParams({
+        grant_type:    'authorization_code',
+        client_id:     CUSTOMER_API_CLIENT_ID,
+        redirect_uri:  redirectUri,
+        code:          code,
+        code_verifier: verifier
+      }).toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Origin': 'https://jewellery-123456924.myshopify.com'
+        }
+      }
+    );
+
+    const { access_token, refresh_token, expires_in, id_token } = tokenRes.data;
+    console.log('[CustomerAPI] Token obtained for +91' + phone);
+
+    // Store tokens in cache (keyed by phone)
+    cache.set('customer_token:' + phone, {
+      accessToken:  access_token,
+      refreshToken: refresh_token,
+      expiresAt:    Date.now() + (expires_in * 1000)
+    }, expires_in);
+
+    // Redirect back to store with success - JS will pick up and complete login
+    const shopDomain = process.env.SHOPIFY_SHOP_DOMAIN || 's0xb6f-su.myshopify.com';
+    res.redirect('https://' + shopDomain + '/?wlp_customer_login=success&wlp_phone=' + encodeURIComponent(phone));
+
+  } catch(err) {
+    console.error('[CustomerAPI callback error]', err.response?.data || err.message);
+    res.redirect('/?wlp_error=token_exchange_failed');
+  }
+});
+
+// Step 3: Get customer access token (called by frontend after callback)
+app.post('/api/customer-auth/get-token', (req, res) => {
+  const { phone } = req.body;
+  const cleanPhone = sanitizePhone(phone || '');
+  const tokenData  = cache.get('customer_token:' + cleanPhone);
+  if (!tokenData) {
+    return res.json({ success: false, message: 'No token found.' });
+  }
+  return res.json({ success: true, accessToken: tokenData.accessToken });
+});
+
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', app: 'WHPLoginPass', cors: 'enabled' }));
 
@@ -374,9 +501,6 @@ app.post('/api/update-email', async (req, res) => {
   }
 });
 
+// Start server
 const PORT = process.env.PORT || 4000;
-
-// GMS Scheme routes
-require('./gms-routes')(app, cache);
-
 app.listen(PORT, () => console.log(`WHPLoginPass running on port ${PORT}`));
