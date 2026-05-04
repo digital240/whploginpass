@@ -143,6 +143,7 @@ function generatePKCE() {
 // Step 1: Start Customer Account OAuth - called after OTP verification
 // Returns the Shopify login URL to redirect user to
 app.post('/api/customer-auth/start', async (req, res) => {
+  console.log('[CustomerAPI] /start called, body:', JSON.stringify(req.body));
   try {
     const { phone, shop, wlpToken } = req.body;
     const cleanPhone = sanitizePhone(phone || '');
