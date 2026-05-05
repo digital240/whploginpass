@@ -1,0 +1,5 @@
+DB_HOST = localhost
+DB_NAME = u463917490_whp_gms
+DB_USER = u463917490_Whpgms2026
+DB_PASS = Whpgms@2026
+DB_PORT = 3306
