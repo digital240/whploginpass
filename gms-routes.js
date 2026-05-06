@@ -555,7 +555,14 @@ module.exports = function(app, cache) {
       items {
         title
         url
-        items { title url }
+        items {
+          title
+          url
+          items {
+            title
+            url
+          }
+        }
       }
     }
   }
@@ -580,10 +587,12 @@ module.exports = function(app, cache) {
         if (u.startsWith('http')) return u.replace('https://' + shopDomain, BASE);
         return BASE + u; // relative URL like /collections/ring
       };
-      const items = (menu.items || []).map(i => ({
-        title: i.title, url: clean(i.url),
-        children: (i.items || []).map(s => ({ title: s.title, url: clean(s.url) }))
+      const mapItems = (arr) => (arr || []).map(i => ({
+        title: i.title,
+        url:   clean(i.url),
+        children: mapItems(i.items)
       }));
+      const items = mapItems(menu.items);
       _menuCache = items; _menuCacheTime = Date.now();
       return res.json({ success: true, items });
     } catch(e) {
