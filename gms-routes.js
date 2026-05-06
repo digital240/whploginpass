@@ -82,7 +82,7 @@ async function createPaymentSchedule(enrolmentId, instalment, payMonths, startDa
     due.setMonth(due.getMonth() + i);
     rows.push([enrolmentId, i, instalment, due.toISOString().split('T')[0]]);
   }
-  await db.execute(
+  await db.query(
     'INSERT INTO gms_payments (enrolment_id, month_num, amount, due_date) VALUES ?',
     [rows]
   );
@@ -123,7 +123,7 @@ module.exports = function(app, cache) {
       const mDate       = maturity_date || maturityDate(tenure);
 
       // Save to MySQL
-      await db.execute(`
+      await db.query(`
         INSERT INTO gms_enrolments (
           enrolment_id, name, phone, email, address1, address2, city, state, pincode,
           dob, identity_proof, preferred_branch,
@@ -147,13 +147,13 @@ module.exports = function(app, cache) {
       await createPaymentSchedule(enrolmentId, amt, paymo, today);
 
       // Save half registration as converted
-      await db.execute(
+      await db.query(
         'UPDATE gms_half_registrations SET converted=1 WHERE phone=? AND converted=0',
         [cleanPhone]
       );
 
       // Log notification
-      await db.execute(
+      await db.query(
         'INSERT INTO gms_notifications (enrolment_id, phone, type, message, status) VALUES (?,?,?,?,?)',
         [enrolmentId, cleanPhone, 'Enrolment', `Enrolled in GMS. Monthly: Rs.${amt}. Tenure: ${tenure} months. Maturity: ${mDate}`, 'Sent']
       );
@@ -205,7 +205,7 @@ module.exports = function(app, cache) {
       const { phone, name, email, product_title, product_sku, redeem_type, instalment, tenure, branch, step } = req.body;
       const cleanPhone = String(phone||'').replace(/\D/g,'').slice(-10);
       if (!cleanPhone) return res.json({ success: false });
-      await db.execute(`
+      await db.query(`
         INSERT INTO gms_half_registrations (phone, name, email, product_title, product_sku, redeem_type, instalment, tenure, branch, step_reached)
         VALUES (?,?,?,?,?,?,?,?,?,?)
         ON DUPLICATE KEY UPDATE name=VALUES(name), email=VALUES(email), step_reached=VALUES(step_reached), updated_at=NOW()
@@ -226,7 +226,7 @@ module.exports = function(app, cache) {
         params.push(req.staff.branch);
       }
       query += ' ORDER BY created_at DESC';
-      const [rows] = await db.execute(query, params);
+      const [rows] = await db.query(query, params);
       return res.json({ success: true, rows, role: req.staff.role, branch: req.staff.branch });
     } catch(err) {
       return res.status(500).json({ success: false, message: err.message });
@@ -236,10 +236,10 @@ module.exports = function(app, cache) {
   // ── GET /api/gms-enrolment/:id ───────────────────────
   app.get('/api/gms-enrolment/:id', staffAuth, async (req, res) => {
     try {
-      const [rows] = await db.execute('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [req.params.id]);
+      const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [req.params.id]);
       if (!rows.length) return res.status(404).json({ success: false, message: 'Not found.' });
-      const [payments] = await db.execute('SELECT * FROM gms_payments WHERE enrolment_id=? ORDER BY month_num', [req.params.id]);
-      const [fees]     = await db.execute('SELECT * FROM gms_late_fees WHERE enrolment_id=?', [req.params.id]);
+      const [payments] = await db.query('SELECT * FROM gms_payments WHERE enrolment_id=? ORDER BY month_num', [req.params.id]);
+      const [fees]     = await db.query('SELECT * FROM gms_late_fees WHERE enrolment_id=?', [req.params.id]);
       return res.json({ success: true, enrolment: rows[0], payments, fees });
     } catch(err) {
       return res.status(500).json({ success: false, message: err.message });
@@ -250,7 +250,7 @@ module.exports = function(app, cache) {
   app.get('/api/gms-search', staffAuth, async (req, res) => {
     try {
       const q = '%' + (req.query.q || '') + '%';
-      const [rows] = await db.execute(
+      const [rows] = await db.query(
         'SELECT * FROM gms_enrolments WHERE (enrolment_id LIKE ? OR phone LIKE ? OR name LIKE ?) ORDER BY created_at DESC LIMIT 50',
         [q, q, q]
       );
@@ -266,12 +266,12 @@ module.exports = function(app, cache) {
       const { enrolmentId, monthNum, lateFee, notes } = req.body;
       if (!enrolmentId || !monthNum) return res.status(400).json({ success: false, message: 'enrolmentId and monthNum required.' });
 
-      const [enrolRows] = await db.execute('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+      const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
       if (!enrolRows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = enrolRows[0];
 
       // Mark payment as paid
-      await db.execute(`
+      await db.query(`
         UPDATE gms_payments SET status='Paid', paid_at=NOW(),
           pay_method='Store', collected_branch=?, collected_by=?,
           late_fee=?, notes=?
@@ -279,7 +279,7 @@ module.exports = function(app, cache) {
       `, [req.staff.branch||'Admin', req.staff.username, lateFee||0, notes||'', enrolmentId, monthNum]);
 
       // Update counts
-      const [countRows] = await db.execute(
+      const [countRows] = await db.query(
         'SELECT COUNT(*) as paid FROM gms_payments WHERE enrolment_id=? AND status="Paid"',
         [enrolmentId]
       );
@@ -288,25 +288,25 @@ module.exports = function(app, cache) {
       const allDone = pending <= 0;
       const status  = allDone ? 'Matured' : 'Active';
 
-      await db.execute(
+      await db.query(
         'UPDATE gms_enrolments SET payments_made=?, payments_pending=?, status=? WHERE enrolment_id=?',
         [made, Math.max(0, pending), status, enrolmentId]
       );
 
       // Apply late fee if any
       if (lateFee && parseFloat(lateFee) > 0) {
-        await db.execute(
+        await db.query(
           'INSERT INTO gms_late_fees (enrolment_id, month_num, amount, applied_by) VALUES (?,?,?,?)',
           [enrolmentId, monthNum, lateFee, req.staff.username]
         );
-        await db.execute(
+        await db.query(
           'UPDATE gms_enrolments SET late_fee_total=late_fee_total+? WHERE enrolment_id=?',
           [lateFee, enrolmentId]
         );
       }
 
       // Audit log
-      await db.execute(
+      await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
         [enrolmentId, `Month ${monthNum} marked Paid`, req.staff.username, req.staff.branch||'Admin', `Late fee: ${lateFee||0}. Notes: ${notes||''}`]
       );
@@ -329,15 +329,15 @@ module.exports = function(app, cache) {
   app.post('/api/gms-apply-late-fee', staffAuth, async (req, res) => {
     try {
       const { enrolmentId, monthNum, amount, reason } = req.body;
-      await db.execute(
+      await db.query(
         'INSERT INTO gms_late_fees (enrolment_id, month_num, amount, reason, applied_by) VALUES (?,?,?,?,?)',
         [enrolmentId, monthNum, amount, reason||'', req.staff.username]
       );
-      await db.execute(
+      await db.query(
         'UPDATE gms_enrolments SET late_fee_total=late_fee_total+? WHERE enrolment_id=?',
         [amount, enrolmentId]
       );
-      await db.execute(
+      await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
         [enrolmentId, `Late fee applied`, req.staff.username, req.staff.branch||'Admin', `Month ${monthNum}: Rs.${amount}. Reason: ${reason}`]
       );
@@ -352,7 +352,7 @@ module.exports = function(app, cache) {
     try {
       if (req.staff.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
       const { enrolmentId } = req.body;
-      const [rows] = await db.execute('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+      const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
       if (!rows.length) return res.status(404).json({ success: false, message: 'Not found.' });
       const enrol = rows[0];
       if (enrol.coupon_code) return res.json({ success: true, couponCode: enrol.coupon_code, message: 'Coupon already generated.' });
@@ -397,11 +397,11 @@ module.exports = function(app, cache) {
       }
 
       // Save coupon to DB
-      await db.execute(
+      await db.query(
         'INSERT INTO gms_coupons (enrolment_id, coupon_code, discount_amount, generated_by, shopify_coupon_id, expires_at) VALUES (?,?,?,?,?,?)',
         [enrolmentId, couponCode, enrol.total_redeemable, req.staff.username, shopifyCouponId, expiryDate.toISOString().split('T')[0]]
       );
-      await db.execute(
+      await db.query(
         'UPDATE gms_enrolments SET coupon_code=?, status="Complete" WHERE enrolment_id=?',
         [couponCode, enrolmentId]
       );
@@ -412,7 +412,7 @@ module.exports = function(app, cache) {
       );
 
       // Log notification
-      await db.execute(
+      await db.query(
         'INSERT INTO gms_notifications (enrolment_id, phone, type, message) VALUES (?,?,?,?)',
         [enrolmentId, enrol.phone, 'Coupon', `Coupon ${couponCode} generated and sent.`]
       );
@@ -428,17 +428,17 @@ module.exports = function(app, cache) {
   // ── GET /api/gms-reports ─────────────────────────────
   app.get('/api/gms-reports', staffAuth, async (req, res) => {
     try {
-      const [total]        = await db.execute('SELECT COUNT(*) as n FROM gms_enrolments');
-      const [active]       = await db.execute("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Active'");
-      const [matured]      = await db.execute("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Matured'");
-      const [complete]     = await db.execute("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Complete'");
-      const [discontinued] = await db.execute("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Discontinued'");
-      const [upi]          = await db.execute("SELECT COUNT(*) as n FROM gms_enrolments WHERE pay_method='UPI Auto-debit'");
-      const [store]        = await db.execute("SELECT COUNT(*) as n FROM gms_enrolments WHERE pay_method='Pay at Store'");
-      const [totalAmt]     = await db.execute("SELECT SUM(total_contribution) as n FROM gms_enrolments WHERE status NOT IN ('Discontinued')");
-      const [paidAmt]      = await db.execute("SELECT SUM(amount) as n FROM gms_payments WHERE status='Paid'");
-      const [maturingSoon] = await db.execute("SELECT COUNT(*) as n FROM gms_enrolments WHERE maturity_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) AND status='Active'");
-      const [halfReg]      = await db.execute("SELECT COUNT(*) as n FROM gms_half_registrations WHERE converted=0");
+      const [total]        = await db.query('SELECT COUNT(*) as n FROM gms_enrolments');
+      const [active]       = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Active'");
+      const [matured]      = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Matured'");
+      const [complete]     = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Complete'");
+      const [discontinued] = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Discontinued'");
+      const [upi]          = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE pay_method='UPI Auto-debit'");
+      const [store]        = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE pay_method='Pay at Store'");
+      const [totalAmt]     = await db.query("SELECT SUM(total_contribution) as n FROM gms_enrolments WHERE status NOT IN ('Discontinued')");
+      const [paidAmt]      = await db.query("SELECT SUM(amount) as n FROM gms_payments WHERE status='Paid'");
+      const [maturingSoon] = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE maturity_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) AND status='Active'");
+      const [halfReg]      = await db.query("SELECT COUNT(*) as n FROM gms_half_registrations WHERE converted=0");
 
       return res.json({
         success: true,
@@ -465,7 +465,7 @@ module.exports = function(app, cache) {
   app.get('/api/gms-half-registrations', staffAuth, async (req, res) => {
     try {
       if (req.staff.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
-      const [rows] = await db.execute('SELECT * FROM gms_half_registrations WHERE converted=0 ORDER BY created_at DESC');
+      const [rows] = await db.query('SELECT * FROM gms_half_registrations WHERE converted=0 ORDER BY created_at DESC');
       return res.json({ success: true, rows });
     } catch(err) {
       return res.status(500).json({ success: false, message: err.message });
@@ -481,13 +481,13 @@ module.exports = function(app, cache) {
       if (!otpData || !otpData.verified) {
         return res.status(401).json({ success: false, message: 'OTP not verified.' });
       }
-      const [enrolments] = await db.execute(
+      const [enrolments] = await db.query(
         'SELECT * FROM gms_enrolments WHERE phone=? ORDER BY created_at DESC',
         [cleanPhone]
       );
       const result = [];
       for (const e of enrolments) {
-        const [payments] = await db.execute(
+        const [payments] = await db.query(
           'SELECT * FROM gms_payments WHERE enrolment_id=? ORDER BY month_num',
           [e.enrolment_id]
         );
@@ -600,7 +600,20 @@ module.exports = function(app, cache) {
     }
   });
 
+  // ── GET /api/gms-branches ── returns store locations ──
+  // Edit BRANCHES array when new store opens — auto-updates everywhere
+  const BRANCHES = [
+    'Borivali',
+    'Vashi',
+    'Nalasopara',
+    'Vile Parle',
+    // Add new branch here: 'Thane',
+  ];
+
+  app.get('/api/gms-branches', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json({ success: true, branches: BRANCHES });
+  });
+
   console.log('[GMS] All routes loaded successfully');
 };
-
-
