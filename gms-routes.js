@@ -507,6 +507,23 @@ module.exports = function(app, cache) {
     res.sendFile(__dirname + '/gms-dashboard.html');
   });
 
+  // ── GET /api/gms-menu-debug — raw response ────────────
+  app.get('/api/gms-menu-debug', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    try {
+      const shopDomain  = process.env.SHOPIFY_SHOP_DOMAIN;
+      const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
+      const gqlRes = await require('axios').post(
+        'https://' + shopDomain + '/admin/api/2024-01/graphql.json',
+        { query: '{ menus(first: 10) { nodes { handle title items { title url } } } }' },
+        { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
+      );
+      return res.json({ shop: shopDomain, raw: gqlRes.data });
+    } catch(e) {
+      return res.json({ error: e.message });
+    }
+  });
+
   // ── GET /api/gms-menu — Shopify nav (cached 10 min) ──
   let _menuCache = null;
   let _menuCacheTime = 0;
