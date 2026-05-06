@@ -522,25 +522,32 @@ module.exports = function(app, cache) {
       if (!shopDomain || !accessToken) {
         return res.json({ success: false, items: [] });
       }
-      // Try both common menu handles
-      const handles = ['main-menu', 'frontend', 'main', 'header-menu'];
-      let menu = null;
-      let lastError = null;
-
-      for (const handle of handles) {
-        try {
-          const gqlRes = await require('axios').post(
-            'https://' + shopDomain + '/admin/api/2024-01/graphql.json',
-            { query: '{ menu(handle: "' + handle + '") { handle title items { title url items { title url } } } }' },
-            { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
-          );
-          console.log('[GMS Menu] handle=' + handle + ' response:', JSON.stringify(gqlRes.data).slice(0,300));
-          if (gqlRes.data?.data?.menu) { menu = gqlRes.data.data.menu; break; }
-          if (gqlRes.data?.errors) lastError = JSON.stringify(gqlRes.data.errors);
-        } catch(e) { lastError = e.message; }
+      const gqlRes = await require('axios').post(
+        'https://' + shopDomain + '/admin/api/2024-01/graphql.json',
+        { query: `{
+  menus(first: 5) {
+    nodes {
+      handle
+      title
+      items {
+        title
+        url
+        items { title url }
       }
+    }
+  }
+}` },
+        { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
+      );
+      console.log('[GMS Menu] raw:', JSON.stringify(gqlRes.data).slice(0, 400));
+      const errors = gqlRes.data?.errors;
+      // Find main-menu from list
+      const allMenus = gqlRes.data?.data?.menus?.nodes || [];
+      console.log('[GMS Menu] found menus:', allMenus.map(m => m.handle));
+      const menu = allMenus.find(m => m.handle === 'main-menu') || allMenus[0];
+      const errors2 = errors;
 
-      if (!menu) {
+            if (!menu) {
         console.error('[GMS Menu] Not found. Last error:', lastError);
         return res.json({ success: false, items: [], debug: lastError });
       }
