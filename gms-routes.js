@@ -528,6 +528,12 @@ module.exports = function(app, cache) {
   let _menuCache = null;
   let _menuCacheTime = 0;
 
+
+  app.get('/api/gms-menu-reset', (req, res) => {
+    _menuCache = null; _menuCacheTime = 0;
+    res.json({ success: true, message: 'Menu cache cleared' });
+  });
+
   app.get('/api/gms-menu', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     try {
@@ -587,4 +593,3 @@ module.exports = function(app, cache) {
 
   console.log('[GMS] All routes loaded successfully');
 };
-
