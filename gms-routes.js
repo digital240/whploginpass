@@ -507,5 +507,39 @@ module.exports = function(app, cache) {
     res.sendFile(__dirname + '/gms-dashboard.html');
   });
 
+  // ── GET /api/gms-menu — Shopify nav (cached 10 min) ──
+  let _menuCache = null;
+  let _menuCacheTime = 0;
+
+  app.get('/api/gms-menu', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    try {
+      if (_menuCache && Date.now() - _menuCacheTime < 600000) {
+        return res.json({ success: true, items: _menuCache });
+      }
+      const shopDomain  = process.env.SHOPIFY_SHOP_DOMAIN;
+      const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
+      if (!shopDomain || !accessToken) {
+        return res.json({ success: false, items: [] });
+      }
+      const gqlRes = await require('axios').post(
+        'https://' + shopDomain + '/admin/api/2024-01/graphql.json',
+        { query: '{ menu(handle: "main-menu") { items { title url items { title url } } } }' },
+        { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
+      );
+      const menu = gqlRes.data?.data?.menu;
+      if (!menu) return res.json({ success: false, items: [] });
+      const clean = (u) => (u || '').replace('https://' + shopDomain, 'https://www.whpjewellers.com');
+      const items = (menu.items || []).map(i => ({
+        title: i.title, url: clean(i.url),
+        children: (i.items || []).map(s => ({ title: s.title, url: clean(s.url) }))
+      }));
+      _menuCache = items; _menuCacheTime = Date.now();
+      return res.json({ success: true, items });
+    } catch(e) {
+      return res.json({ success: false, items: [] });
+    }
+  });
+
   console.log('[GMS] All routes loaded successfully');
 };
