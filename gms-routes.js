@@ -568,7 +568,12 @@ module.exports = function(app, cache) {
         console.error('[GMS Menu] Not found. Last error:', lastError);
         return res.json({ success: false, items: [], debug: lastError });
       }
-      const clean = (u) => (u || '').replace('https://' + shopDomain, 'https://www.whpjewellers.com');
+      const BASE = 'https://www.whpjewellers.com';
+      const clean = (u) => {
+        if (!u) return BASE;
+        if (u.startsWith('http')) return u.replace('https://' + shopDomain, BASE);
+        return BASE + u; // relative URL like /collections/ring
+      };
       const items = (menu.items || []).map(i => ({
         title: i.title, url: clean(i.url),
         children: (i.items || []).map(s => ({ title: s.title, url: clean(s.url) }))
