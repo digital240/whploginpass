@@ -65,7 +65,7 @@ function staffAuth(req, res, next) {
 async function sendSms(phone, message) {
   try {
     await axios.post('https://www.smsalert.co.in/api/push.json', null, {
-      params: { apikey: process.env.SMSALERT_API_KEY, sender: 'WHPECM', mobileno: phone, text: message },
+      params: { apikey: process.env.SMSALERT_API_KEY, sender: 'WHPECM', mobileno: phone, text: message, route: 'transscrub', template_id: '1707164361822841747' },
       timeout: 10000
     });
     console.log(`[SMS] Sent to ${phone}`);
@@ -180,7 +180,7 @@ if (!otpData?.verified && !sessionValid) {
       // Also save to Google Sheet as backup
       try {
         const { google } = require('googleapis');
-        if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.GOOGLE_SHEET_ID) {
+       if (false && process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.GOOGLE_SHEET_ID) {
           const creds = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
           const auth  = new google.auth.GoogleAuth({ credentials: creds, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
           const sheets = google.sheets({ version: 'v4', auth });
