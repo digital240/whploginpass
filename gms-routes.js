@@ -163,6 +163,28 @@ if (!otpData?.verified && !sessionValid) {
         [cleanPhone]
       );
 
+      // Sync address to user profile if logged in
+      if (userToken && sessionValid) {
+        try {
+          const [sRows] = await db.query(
+            'SELECT user_id FROM gms_user_sessions s JOIN gms_users u ON s.user_id=u.user_id WHERE s.token=? AND u.mobile=?',
+            [userToken, cleanPhone]
+          );
+          if (sRows.length > 0) {
+            await db.query(
+              `UPDATE gms_users SET
+                address1=COALESCE(NULLIF(?,''),address1),
+                address2=?,
+                city=COALESCE(NULLIF(?,''),city),
+                state=COALESCE(NULLIF(?,''),state),
+                pincode=COALESCE(NULLIF(?,''),pincode)
+               WHERE user_id=?`,
+              [address1||'', address2||'', city||'', state||'', pincode||'', sRows[0].user_id]
+            );
+          }
+        } catch(e) { console.log('[GMS] Address sync error:', e.message); }
+      }
+
       // Log notification
       await db.query(
         'INSERT INTO gms_notifications (enrolment_id, phone, type, message, status) VALUES (?,?,?,?,?)',
