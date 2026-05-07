@@ -306,9 +306,6 @@ module.exports = function(app, cache) {
     }
   });
 
-  // ── GET /my-profile ────────────────────────────────────────────
- app.get('/my-profile', (req, res) => {
-  res.sendFile(__dirname + '/gms-profile.html');
-});
+ 
   console.log('[GMS User] Auth routes loaded');
 };
