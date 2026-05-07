@@ -11,10 +11,41 @@ function genId() {
   return 'WHP-GMS-' + Date.now().toString().slice(-8);
 }
 
+// ── FIX: Convert any date format to YYYY-MM-DD for MySQL DATE column
+// Frontend sends "07 Nov 2027" — MySQL needs "2027-11-07"
+function toMysqlDate(dateStr, tenure) {
+  // Already YYYY-MM-DD — use as-is
+  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) {
+    return dateStr;
+  }
+  // Formatted string like "07 Nov 2027"
+  if (dateStr && typeof dateStr === 'string' && dateStr.trim()) {
+    const months = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+    const parts  = dateStr.trim().split(' ');
+    if (parts.length === 3) {
+      const day   = parseInt(parts[0], 10);
+      const month = months[parts[1]];
+      const year  = parseInt(parts[2], 10);
+      if (day && month && year) {
+        return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      }
+    }
+  }
+  // Calculate from tenure as fallback
+  const now    = new Date();
+  const t      = parseInt(tenure) || 17;
+  const totalM = now.getMonth() + t;
+  const year   = now.getFullYear() + Math.floor(totalM / 12);
+  const month  = totalM % 12;
+  return new Date(year, month, now.getDate()).toISOString().split('T')[0];
+}
+
 function maturityDate(tenure) {
-  const d = new Date();
-  d.setMonth(d.getMonth() + parseInt(tenure));
-  return d.toISOString().split('T')[0];
+  const now    = new Date();
+  const totalM = now.getMonth() + parseInt(tenure);
+  const year   = now.getFullYear() + Math.floor(totalM / 12);
+  const month  = totalM % 12;
+  return new Date(year, month, now.getDate()).toISOString().split('T')[0];
 }
 
 function fmt(n) {
@@ -112,26 +143,30 @@ module.exports = function(app, cache) {
         amt, tenure, paymo, pct, type, paid, bonus, redeem, pay, maturity_date
       } = req.body;
 
-     const cleanPhone = String(phone).replace(/\D/g,'').slice(-10);
+      const cleanPhone = String(phone).replace(/\D/g,'').slice(-10);
 
-// Allow if OTP verified OR if user is logged in via session token
-const otpData  = cache.get(`otp:${cleanPhone}`);
-const userToken = req.headers['x-user-token'] || req.body?.userToken;
-let sessionValid = false;
-if (userToken) {
-  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-  const [sessionRows] = await db.query(
-    'SELECT u.user_id FROM gms_users u JOIN gms_user_sessions s ON u.user_id = s.user_id WHERE s.token = ? AND s.expires_at > ? AND u.mobile = ?',
-    [userToken, now, cleanPhone]
-  );
-  sessionValid = sessionRows.length > 0;
-}
-if (!otpData?.verified && !sessionValid) {
-  return res.status(401).json({ success: false, message: 'Mobile not verified.' });
-}
+      // Allow if OTP verified OR if user is logged in via session token
+      const otpData   = cache.get(`otp:${cleanPhone}`);
+      const userToken = req.headers['x-user-token'] || req.body?.userToken;
+      let sessionValid = false;
+      if (userToken) {
+        const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        const [sessionRows] = await db.query(
+          'SELECT u.user_id FROM gms_users u JOIN gms_user_sessions s ON u.user_id = s.user_id WHERE s.token = ? AND s.expires_at > ? AND u.mobile = ?',
+          [userToken, now, cleanPhone]
+        );
+        sessionValid = sessionRows.length > 0;
+      }
+      if (!otpData?.verified && !sessionValid) {
+        return res.status(401).json({ success: false, message: 'Mobile not verified.' });
+      }
+
       const enrolmentId = genId();
       const today       = new Date().toISOString().split('T')[0];
-      const mDate       = maturity_date || maturityDate(tenure);
+
+      // ── FIX: Convert frontend date string to YYYY-MM-DD for MySQL
+      const mDate = toMysqlDate(maturity_date, tenure);
+      console.log(`[GMS] maturity_date received: "${maturity_date}" → saved as: "${mDate}"`);
 
       // Save to MySQL
       await db.query(`
@@ -202,7 +237,7 @@ if (!otpData?.verified && !sessionValid) {
       // Also save to Google Sheet as backup
       try {
         const { google } = require('googleapis');
-       if (false && process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.GOOGLE_SHEET_ID) {
+        if (false && process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.GOOGLE_SHEET_ID) {
           const creds = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
           const auth  = new google.auth.GoogleAuth({ credentials: creds, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
           const sheets = google.sheets({ version: 'v4', auth });
@@ -252,7 +287,7 @@ if (!otpData?.verified && !sessionValid) {
   // ── GET /api/gms-enrolments ──────────────────────────
   app.get('/api/gms-enrolments', staffAuth, async (req, res) => {
     try {
-      let query  = 'SELECT * FROM gms_enrolments WHERE 1=1';
+      let query    = 'SELECT * FROM gms_enrolments WHERE 1=1';
       const params = [];
       if (req.staff.role === 'branch' && req.staff.branch) {
         query += ' AND preferred_branch = ?';
@@ -390,12 +425,10 @@ if (!otpData?.verified && !sessionValid) {
       const enrol = rows[0];
       if (enrol.coupon_code) return res.json({ success: true, couponCode: enrol.coupon_code, message: 'Coupon already generated.' });
 
-      // Generate unique coupon code
       const couponCode = 'WHP' + Math.random().toString(36).toUpperCase().slice(2,8);
       const expiryDate = new Date();
       expiryDate.setMonth(expiryDate.getMonth() + 6);
 
-      // Create Shopify discount code
       let shopifyCouponId = '';
       try {
         const shopDomain  = process.env.SHOPIFY_SHOP_DOMAIN;
@@ -429,7 +462,6 @@ if (!otpData?.verified && !sessionValid) {
         console.error('[GMS] Shopify coupon error:', shopErr.message);
       }
 
-      // Save coupon to DB
       await db.query(
         'INSERT INTO gms_coupons (enrolment_id, coupon_code, discount_amount, generated_by, shopify_coupon_id, expires_at) VALUES (?,?,?,?,?,?)',
         [enrolmentId, couponCode, enrol.total_redeemable, req.staff.username, shopifyCouponId, expiryDate.toISOString().split('T')[0]]
@@ -439,12 +471,10 @@ if (!otpData?.verified && !sessionValid) {
         [couponCode, enrolmentId]
       );
 
-      // Send SMS to customer
       await sendSms(enrol.phone,
         `Dear Customer, your WHP GMS scheme is complete! Your coupon code is ${couponCode} worth Rs.${enrol.total_redeemable}. Use at whpjewellers.com. Valid till ${expiryDate.toLocaleDateString('en-IN')}. - WHP Jewellers`
       );
 
-      // Log notification
       await db.query(
         'INSERT INTO gms_notifications (enrolment_id, phone, type, message) VALUES (?,?,?,?)',
         [enrolmentId, enrol.phone, 'Coupon', `Coupon ${couponCode} generated and sent.`]
@@ -540,7 +570,7 @@ if (!otpData?.verified && !sessionValid) {
     res.sendFile(__dirname + '/gms-dashboard.html');
   });
 
-  // ── GET /api/gms-menu-debug — raw response ────────────
+  // ── GET /api/gms-menu-debug ───────────────────────────
   app.get('/api/gms-menu-debug', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     try {
@@ -557,10 +587,9 @@ if (!otpData?.verified && !sessionValid) {
     }
   });
 
-  // ── GET /api/gms-menu — Shopify nav (cached 10 min) ──
-  let _menuCache = null;
+  // ── GET /api/gms-menu ─────────────────────────────────
+  let _menuCache     = null;
   let _menuCacheTime = 0;
-
 
   app.get('/api/gms-menu-reset', (req, res) => {
     _menuCache = null; _menuCacheTime = 0;
@@ -580,50 +609,21 @@ if (!otpData?.verified && !sessionValid) {
       }
       const gqlRes = await require('axios').post(
         'https://' + shopDomain + '/admin/api/2024-01/graphql.json',
-        { query: `{
-  menus(first: 5) {
-    nodes {
-      handle
-      title
-      items {
-        title
-        url
-        items {
-          title
-          url
-          items {
-            title
-            url
-          }
-        }
-      }
-    }
-  }
-}` },
+        { query: `{ menus(first: 5) { nodes { handle title items { title url items { title url items { title url } } } } } }` },
         { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
       );
-      console.log('[GMS Menu] raw:', JSON.stringify(gqlRes.data).slice(0, 400));
-      const errors = gqlRes.data?.errors;
-      // Find main-menu from list
       const allMenus = gqlRes.data?.data?.menus?.nodes || [];
-      console.log('[GMS Menu] found menus:', allMenus.map(m => m.handle));
-      const menu = allMenus.find(m => m.handle === 'main-menu') || allMenus[0];
-      const errors2 = errors;
+      const menu     = allMenus.find(m => m.handle === 'main-menu') || allMenus[0];
+      if (!menu) return res.json({ success: false, items: [] });
 
-            if (!menu) {
-        console.error('[GMS Menu] Not found. Last error:', lastError);
-        return res.json({ success: false, items: [], debug: lastError });
-      }
-      const BASE = 'https://www.whpjewellers.com';
+      const BASE  = 'https://www.whpjewellers.com';
       const clean = (u) => {
         if (!u) return BASE;
         if (u.startsWith('http')) return u.replace('https://' + shopDomain, BASE);
-        return BASE + u; // relative URL like /collections/ring
+        return BASE + u;
       };
       const mapItems = (arr) => (arr || []).map(i => ({
-        title: i.title,
-        url:   clean(i.url),
-        children: mapItems(i.items)
+        title: i.title, url: clean(i.url), children: mapItems(i.items)
       }));
       const items = mapItems(menu.items);
       _menuCache = items; _menuCacheTime = Date.now();
@@ -633,14 +633,12 @@ if (!otpData?.verified && !sessionValid) {
     }
   });
 
-  // ── GET /api/gms-branches ── returns store locations ──
-  // Edit BRANCHES array when new store opens — auto-updates everywhere
+  // ── GET /api/gms-branches ─────────────────────────────
   const BRANCHES = [
     'Borivali',
     'Vashi',
     'Nalasopara',
     'Vile Parle',
-    // Add new branch here: 'Thane',
   ];
 
   app.get('/api/gms-branches', (req, res) => {
