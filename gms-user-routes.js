@@ -414,6 +414,34 @@ module.exports = function(app, cache) {
     }
   });
 
+   // ── GET /api/gms/addresses/default ───────────────────────────
+  // Get default address (used by enrol form to auto-fill)
+  app.get('/api/gms/addresses/default', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const [rows] = await db.query(
+        'SELECT * FROM gms_user_addresses WHERE user_id=? AND is_default=1 LIMIT 1',
+        [user.user_id]
+      );
+
+      if (!rows.length) {
+        // Fall back to first address
+        const [first] = await db.query(
+          'SELECT * FROM gms_user_addresses WHERE user_id=? ORDER BY created_at ASC LIMIT 1',
+          [user.user_id]
+        );
+        return res.json({ success: true, address: first[0] || null });
+      }
+
+      return res.json({ success: true, address: rows[0] });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   // ── POST /api/gms/addresses ───────────────────────────────────
   // Add a new address
   app.post('/api/gms/addresses', async (req, res) => {
@@ -543,33 +571,7 @@ module.exports = function(app, cache) {
     }
   });
 
-  // ── GET /api/gms/addresses/default ───────────────────────────
-  // Get default address (used by enrol form to auto-fill)
-  app.get('/api/gms/addresses/default', async (req, res) => {
-    try {
-      const token = req.headers['x-user-token'];
-      const user  = await getUserFromToken(token);
-      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
-
-      const [rows] = await db.query(
-        'SELECT * FROM gms_user_addresses WHERE user_id=? AND is_default=1 LIMIT 1',
-        [user.user_id]
-      );
-
-      if (!rows.length) {
-        // Fall back to first address
-        const [first] = await db.query(
-          'SELECT * FROM gms_user_addresses WHERE user_id=? ORDER BY created_at ASC LIMIT 1',
-          [user.user_id]
-        );
-        return res.json({ success: true, address: first[0] || null });
-      }
-
-      return res.json({ success: true, address: rows[0] });
-    } catch (err) {
-      return res.status(500).json({ success: false, message: err.message });
-    }
-  });
+ 
 
   console.log('[GMS User] Auth routes loaded');
 };
