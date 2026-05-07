@@ -112,12 +112,23 @@ module.exports = function(app, cache) {
         amt, tenure, paymo, pct, type, paid, bonus, redeem, pay, maturity_date
       } = req.body;
 
-      const cleanPhone = String(phone).replace(/\D/g,'').slice(-10);
-      const otpData    = cache.get(`otp:${cleanPhone}`);
-      if (!otpData || !otpData.verified) {
-        return res.status(401).json({ success: false, message: 'Mobile not verified.' });
-      }
+     const cleanPhone = String(phone).replace(/\D/g,'').slice(-10);
 
+// Allow if OTP verified OR if user is logged in via session token
+const otpData  = cache.get(`otp:${cleanPhone}`);
+const userToken = req.headers['x-user-token'] || req.body?.userToken;
+let sessionValid = false;
+if (userToken) {
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const [sessionRows] = await db.query(
+    'SELECT u.user_id FROM gms_users u JOIN gms_user_sessions s ON u.user_id = s.user_id WHERE s.token = ? AND s.expires_at > ? AND u.mobile = ?',
+    [userToken, now, cleanPhone]
+  );
+  sessionValid = sessionRows.length > 0;
+}
+if (!otpData?.verified && !sessionValid) {
+  return res.status(401).json({ success: false, message: 'Mobile not verified.' });
+}
       const enrolmentId = genId();
       const today       = new Date().toISOString().split('T')[0];
       const mDate       = maturity_date || maturityDate(tenure);
