@@ -255,16 +255,23 @@ module.exports = function(app, cache) {
         enriched.push({ ...enrol, payments });
       }
 
-      return res.json({
-        success: true,
-        user: {
-          user_id:      user.user_id,
-          first_name:   user.first_name,
-          last_name:    user.last_name,
-          mobile:       user.mobile,
-          email:        user.email,
-          member_since: user.created_at
-        },
+     return res.json({
+  success: true,
+  user: {
+    user_id:          user.user_id,
+    first_name:       user.first_name,
+    last_name:        user.last_name,
+    mobile:           user.mobile,
+    email:            user.email,
+    secondary_mobile: user.secondary_mobile,
+    address1:         user.address1,
+    address2:         user.address2,
+    city:             user.city,
+    state:            user.state,
+    pincode:          user.pincode,
+    photo_url:        user.photo_url,
+    member_since:     user.created_at
+  },
         enrolments: enriched
       });
 
@@ -307,5 +314,64 @@ module.exports = function(app, cache) {
   });
 
  
+ // ── POST /api/gms/update-profile ──────────────────────────────
+  app.post('/api/gms/update-profile', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+      const { email, address1, address2, city, state, pincode, photo_url } = req.body;
+      await db.query(
+        `UPDATE gms_users SET
+          email=COALESCE(NULLIF(?,''),email), address1=COALESCE(NULLIF(?,''),address1),
+          address2=?, city=COALESCE(NULLIF(?,''),city), state=COALESCE(NULLIF(?,''),state),
+          pincode=COALESCE(NULLIF(?,''),pincode), photo_url=COALESCE(NULLIF(?,''),photo_url)
+         WHERE user_id=?`,
+        [email||'', address1||'', address2||'', city||'', state||'', pincode||'', photo_url||'', user.user_id]
+      );
+      const [rows] = await db.query('SELECT * FROM gms_users WHERE user_id=?', [user.user_id]);
+      return res.json({ success: true, message: 'Profile updated.', user: rows[0] });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'Update failed.' });
+    }
+  });
+
+  // ── POST /api/gms/send-secondary-otp ─────────────────────────
+  app.post('/api/gms/send-secondary-otp', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+      const secondary = cleanPhone(req.body.phone);
+      if (secondary.length !== 10) return res.status(400).json({ success: false, message: 'Enter valid 10-digit number.' });
+      if (secondary === user.mobile) return res.status(400).json({ success: false, message: 'Cannot be same as primary number.' });
+      const otp = generateOtp();
+      cache.set(`gms_sec_otp:${user.user_id}:${secondary}`, { otp }, 600);
+      await sendSms(secondary, `Dear user, your WHP Jewellers otp code is ${otp}`);
+      return res.json({ success: true, message: `OTP sent to +91 ${secondary}` });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'Failed to send OTP.' });
+    }
+  });
+
+  // ── POST /api/gms/verify-secondary-otp ───────────────────────
+  app.post('/api/gms/verify-secondary-otp', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+      const secondary = cleanPhone(req.body.phone);
+      const { otp }   = req.body;
+      const stored    = cache.get(`gms_sec_otp:${user.user_id}:${secondary}`);
+      if (!stored) return res.status(400).json({ success: false, message: 'OTP expired.' });
+      if (String(stored.otp) !== String(otp)) return res.status(400).json({ success: false, message: 'Incorrect OTP.' });
+      await db.query('UPDATE gms_users SET secondary_mobile=? WHERE user_id=?', [secondary, user.user_id]);
+      cache.del(`gms_sec_otp:${user.user_id}:${secondary}`);
+      return res.json({ success: true, message: 'Secondary number saved.' });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'Verification failed.' });
+    }
+  });
+
   console.log('[GMS User] Auth routes loaded');
 };
