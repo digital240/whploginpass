@@ -391,5 +391,185 @@ module.exports = function(app, cache) {
     }
   });
 
+  // ================================================================
+// ADD THESE ROUTES inside module.exports = function(app, cache) {
+// Place just before the final console.log('[GMS User] Auth routes loaded');
+// ================================================================
+
+  // ── GET /api/gms/addresses ────────────────────────────────────
+  // Get all addresses for logged-in user
+  app.get('/api/gms/addresses', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const [rows] = await db.query(
+        'SELECT * FROM gms_user_addresses WHERE user_id = ? ORDER BY is_default DESC, created_at ASC',
+        [user.user_id]
+      );
+      return res.json({ success: true, addresses: rows });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── POST /api/gms/addresses ───────────────────────────────────
+  // Add a new address
+  app.post('/api/gms/addresses', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const { label, address1, address2, city, state, pincode, is_default } = req.body;
+      if (!address1 || !city || !pincode) {
+        return res.status(400).json({ success: false, message: 'Address line 1, city and pincode are required.' });
+      }
+
+      // If setting as default, unset all others first
+      if (is_default) {
+        await db.query('UPDATE gms_user_addresses SET is_default=0 WHERE user_id=?', [user.user_id]);
+      }
+
+      // If this is first address, make it default automatically
+      const [existing] = await db.query('SELECT COUNT(*) as cnt FROM gms_user_addresses WHERE user_id=?', [user.user_id]);
+      const makeDefault = is_default || existing[0].cnt === 0;
+
+      const [result] = await db.query(
+        'INSERT INTO gms_user_addresses (user_id, label, address1, address2, city, state, pincode, is_default) VALUES (?,?,?,?,?,?,?,?)',
+        [user.user_id, label||'Home', address1.trim(), address2||'', city.trim(), state||'', pincode.trim(), makeDefault ? 1 : 0]
+      );
+
+      const [rows] = await db.query('SELECT * FROM gms_user_addresses WHERE address_id=?', [result.insertId]);
+      return res.json({ success: true, message: 'Address added.', address: rows[0] });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── PUT /api/gms/addresses/:id ────────────────────────────────
+  // Edit an existing address
+  app.put('/api/gms/addresses/:id', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const addressId = parseInt(req.params.id);
+      const { label, address1, address2, city, state, pincode, is_default } = req.body;
+
+      // Verify ownership
+      const [check] = await db.query(
+        'SELECT * FROM gms_user_addresses WHERE address_id=? AND user_id=?',
+        [addressId, user.user_id]
+      );
+      if (!check.length) return res.status(404).json({ success: false, message: 'Address not found.' });
+
+      // If setting as default, unset all others first
+      if (is_default) {
+        await db.query('UPDATE gms_user_addresses SET is_default=0 WHERE user_id=?', [user.user_id]);
+      }
+
+      await db.query(
+        'UPDATE gms_user_addresses SET label=?, address1=?, address2=?, city=?, state=?, pincode=?, is_default=? WHERE address_id=?',
+        [label||'Home', address1||'', address2||'', city||'', state||'', pincode||'', is_default ? 1 : 0, addressId]
+      );
+
+      const [rows] = await db.query('SELECT * FROM gms_user_addresses WHERE address_id=?', [addressId]);
+      return res.json({ success: true, message: 'Address updated.', address: rows[0] });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── DELETE /api/gms/addresses/:id ────────────────────────────
+  // Delete an address
+  app.delete('/api/gms/addresses/:id', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const addressId = parseInt(req.params.id);
+
+      // Verify ownership
+      const [check] = await db.query(
+        'SELECT * FROM gms_user_addresses WHERE address_id=? AND user_id=?',
+        [addressId, user.user_id]
+      );
+      if (!check.length) return res.status(404).json({ success: false, message: 'Address not found.' });
+
+      await db.query('DELETE FROM gms_user_addresses WHERE address_id=?', [addressId]);
+
+      // If deleted address was default, make the first remaining one default
+      if (check[0].is_default) {
+        await db.query(
+          'UPDATE gms_user_addresses SET is_default=1 WHERE user_id=? ORDER BY created_at ASC LIMIT 1',
+          [user.user_id]
+        );
+      }
+
+      return res.json({ success: true, message: 'Address deleted.' });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── POST /api/gms/addresses/:id/default ──────────────────────
+  // Set address as default
+  app.post('/api/gms/addresses/:id/default', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const addressId = parseInt(req.params.id);
+
+      // Verify ownership
+      const [check] = await db.query(
+        'SELECT * FROM gms_user_addresses WHERE address_id=? AND user_id=?',
+        [addressId, user.user_id]
+      );
+      if (!check.length) return res.status(404).json({ success: false, message: 'Address not found.' });
+
+      // Unset all, then set this one
+      await db.query('UPDATE gms_user_addresses SET is_default=0 WHERE user_id=?', [user.user_id]);
+      await db.query('UPDATE gms_user_addresses SET is_default=1 WHERE address_id=?', [addressId]);
+
+      return res.json({ success: true, message: 'Default address updated.' });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── GET /api/gms/addresses/default ───────────────────────────
+  // Get default address (used by enrol form to auto-fill)
+  app.get('/api/gms/addresses/default', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const [rows] = await db.query(
+        'SELECT * FROM gms_user_addresses WHERE user_id=? AND is_default=1 LIMIT 1',
+        [user.user_id]
+      );
+
+      if (!rows.length) {
+        // Fall back to first address
+        const [first] = await db.query(
+          'SELECT * FROM gms_user_addresses WHERE user_id=? ORDER BY created_at ASC LIMIT 1',
+          [user.user_id]
+        );
+        return res.json({ success: true, address: first[0] || null });
+      }
+
+      return res.json({ success: true, address: rows[0] });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   console.log('[GMS User] Auth routes loaded');
 };
