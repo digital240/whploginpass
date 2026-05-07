@@ -9,6 +9,10 @@ const crypto    = require('crypto');
 
 const app   = express();
 const cache = new NodeCache({ stdTTL: 600 });
+const db = require('./db');
+db.query('SELECT 1')
+  .then(() => console.log('✅ DB Connected'))
+  .catch(err => console.log('❌ DB Error:', err.message));
 const tokenStore = {};
 
 // ── CORS — must be FIRST before all routes ──────────────
@@ -517,15 +521,12 @@ app.post('/api/update-email', async (req, res) => {
   }
 });
 
+ 
 // Start server
 const PORT = process.env.PORT || 4000;
 require('./gms-routes')(app, cache);
+require('./gms-user-routes')(app, cache);
 app.listen(PORT, () => console.log(`WHPLoginPass running on port ${PORT}`));
 
 
-
-const db = require('./db');
-
-db.query('SELECT 1')
-.then(() => console.log('✅ DB Connected'))
-.catch(err => console.log('❌ DB Error:', err.message));
+ 
