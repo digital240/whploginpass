@@ -167,7 +167,7 @@ if (!otpData?.verified && !sessionValid) {
       if (userToken && sessionValid) {
         try {
           const [sRows] = await db.query(
-            'SELECT user_id FROM gms_user_sessions s JOIN gms_users u ON s.user_id=u.user_id WHERE s.token=? AND u.mobile=?',
+            'SELECT u.user_id FROM gms_user_sessions s JOIN gms_users u ON s.user_id=u.user_id WHERE s.token=? AND u.mobile=?',
             [userToken, cleanPhone]
           );
           if (sRows.length > 0) {
