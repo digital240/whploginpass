@@ -26,7 +26,7 @@ app.use(function(req, res, next) {
 
 // ── MIDDLEWARE ──────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // ── WLP TOKEN SYSTEM ────────────────────────────────────
 const WLP_TOKEN_SECRET = process.env.WLP_TOKEN_SECRET || 'whploginpass_secret_key_2025';
