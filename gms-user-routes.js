@@ -22,12 +22,14 @@ function cleanPhone(phone) {
 async function sendSms(phone, message) {
   try {
     await axios.post('https://www.smsalert.co.in/api/push.json', null, {
-      params: {
-        apikey:   process.env.SMSALERT_API_KEY,
-        sender:   'WHPECM',
-        mobileno: phone,
-        text:     message
-      },
+    params: {
+  apikey:      process.env.SMSALERT_API_KEY,
+  sender:      'WHPECM',
+  mobileno:    phone,
+  text:        message,
+  route:       'transscrub',
+  template_id: '1707164361822841747'
+},
       timeout: 10000
     });
     console.log(`[GMS User SMS] Sent to ${phone}`);
@@ -90,7 +92,7 @@ module.exports = function(app, cache) {
       cache.set(`gms_otp_attempts:${mobile}`, 0, 600);
 
       await sendSms(mobile,
-        `Dear Customer, your WHP GMS OTP is ${otp}. Valid for 10 minutes. Do not share. - WHP Jewellers`
+        `Dear user, your WHP Jewellers otp code is ${otp}`
       );
 
       // Tell frontend if mobile is already registered
