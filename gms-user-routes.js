@@ -374,5 +374,22 @@ module.exports = function(app, cache) {
     }
   });
 
+  // ── POST /api/gms/upload-photo ────────────────────────────────
+  app.post('/api/gms/upload-photo', async (req, res) => {
+    try {
+      const token = req.headers['x-user-token'];
+      const user  = await getUserFromToken(token);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+      const { photo_base64, mime_type } = req.body;
+      if (!photo_base64) return res.status(400).json({ success: false, message: 'No photo provided.' });
+      const dataUrl = `data:${mime_type || 'image/jpeg'};base64,${photo_base64}`;
+      await db.query('UPDATE gms_users SET photo_url = ? WHERE user_id = ?', [dataUrl, user.user_id]);
+      return res.json({ success: true, photo_url: dataUrl });
+    } catch (err) {
+      console.error('[GMS upload-photo]', err.message);
+      return res.status(500).json({ success: false, message: 'Photo upload failed.' });
+    }
+  });
+
   console.log('[GMS User] Auth routes loaded');
 };
