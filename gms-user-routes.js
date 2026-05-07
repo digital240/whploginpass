@@ -320,6 +320,7 @@ module.exports = function(app, cache) {
       const token = req.headers['x-user-token'];
       const user  = await getUserFromToken(token);
       if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+      console.log('[update-profile] user:', user.user_id, 'body:', JSON.stringify(req.body).slice(0, 200));
       const { email, address1, address2, city, state, pincode, photo_url } = req.body;
       await db.query(
         `UPDATE gms_users SET
