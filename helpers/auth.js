@@ -61,13 +61,20 @@ async function createUserSession(userId) {
 function getStaff() {
   const ap = process.env.GMS_ADMIN_PASS  || 'whp_2026_gms';
   const bp = process.env.GMS_BRANCH_PASS || 'whp_2026_gms';
-  return {
+  const base = {
     whp_admin:  { password: ap, role: 'admin',  branch: null,          name: 'WHP Admin' },
     borivali:   { password: bp, role: 'branch', branch: 'Borivali',    name: 'Borivali Manager' },
     vashi:      { password: bp, role: 'branch', branch: 'Vashi',       name: 'Vashi Manager' },
     nalasopara: { password: bp, role: 'branch', branch: 'Nalasopara',  name: 'Nalasopara Manager' },
     vileparle:  { password: bp, role: 'branch', branch: 'Vile Parle',  name: 'Vile Parle Manager' },
   };
+  // Merge any custom users created via admin dashboard
+  try {
+    const fs     = require('fs');
+    const FILE   = require('path').resolve(__dirname, '../custom-users.json');
+    const custom = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    return { ...base, ...custom };
+  } catch(e) { return base; }
 }
 
 module.exports = { createStaffToken, verifyStaffToken, staffAuth, adminOnly, getUserFromToken, createUserSession, getStaff };
