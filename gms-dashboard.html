@@ -410,7 +410,8 @@ tr:hover td{background:#fdf8f5;}
           <div class="stat-card green"><div class="stat-num" id="s-active">—</div><div class="stat-label">Active</div></div>
           <div class="stat-card amber"><div class="stat-num" id="s-matured">—</div><div class="stat-label">Matured</div></div>
           <div class="stat-card blue"><div class="stat-num" id="s-complete">—</div><div class="stat-label">Completed</div></div>
-          <div class="stat-card"><div class="stat-num" id="s-collected">—</div><div class="stat-label">Total Collected</div></div>
+          <div class="stat-card green"><div class="stat-num" id="s-collected">—</div><div class="stat-label">Total Collected (incl. fees)</div></div>
+          <div class="stat-card"><div class="stat-num" id="s-latefees">—</div><div class="stat-label">Late Fees Collected</div></div>
           <div class="stat-card amber"><div class="stat-num" id="s-soon">—</div><div class="stat-label">Maturing (30d)</div></div>
           <div class="stat-card"><div class="stat-num" id="s-half">—</div><div class="stat-label">Half Registrations</div></div>
           <div class="stat-card"><div class="stat-num" id="s-disc">—</div><div class="stat-label">Discontinued</div></div>
@@ -725,6 +726,44 @@ tr:hover td{background:#fdf8f5;}
   </div>
 </div>
 
+<!-- ══ MODAL: DISCONTINUE SCHEME ══ -->
+<div class="modal-backdrop" id="discontinue-modal" onclick="onBdClick(event,'discontinue-modal')">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title" style="color:var(--red)">⚠ Discontinue Scheme</div>
+        <div style="font-size:12px;color:var(--text-soft);margin-top:3px" id="disc-sub"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('discontinue-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--red-bg);border:1px solid rgba(192,57,43,0.2);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;font-size:13px;color:var(--red)">
+        ⚠ This action cannot be undone. The customer will receive an SMS notification and the scheme will be permanently marked as discontinued.
+      </div>
+      <div class="fg">
+        <label>Reason for Discontinuation *</label>
+        <select id="disc-reason-select" onchange="onDiscReasonChange()">
+          <option value="">Select reason</option>
+          <option value="Customer request">Customer request</option>
+          <option value="Non-payment">Non-payment (defaulted)</option>
+          <option value="Customer relocation">Customer relocation</option>
+          <option value="Deceased">Customer deceased</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="fg" id="disc-other-fg" style="display:none">
+        <label>Specify reason</label>
+        <input type="text" id="disc-other-text" placeholder="Enter reason…">
+      </div>
+      <input type="hidden" id="disc-enrol-id">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('discontinue-modal')">Cancel</button>
+      <button class="btn btn-sm" id="disc-confirm-btn" style="background:var(--red);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-family:var(--ff);font-weight:600;cursor:pointer" onclick="confirmDiscontinue()">Confirm Discontinue</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -873,8 +912,9 @@ async function loadOverview() {
     document.getElementById('s-active').textContent   = s.active;
     document.getElementById('s-matured').textContent  = s.matured;
     document.getElementById('s-complete').textContent = s.complete;
-    document.getElementById('s-collected').textContent = fmtAmt(s.paidAmount);
-    document.getElementById('s-soon').textContent     = s.maturingSoon;
+    document.getElementById('s-collected').textContent  = fmtAmt(s.paidAmount);
+    document.getElementById('s-latefees').textContent   = fmtAmt(s.lateFees || 0);
+    document.getElementById('s-soon').textContent       = s.maturingSoon;
     document.getElementById('s-half').textContent     = s.halfReg;
     document.getElementById('s-disc').textContent     = s.discontinued;
   } catch(e) { console.error('Overview error:', e); }
@@ -1024,6 +1064,15 @@ async function openDetail(enrolId) {
       </div>
 
       ${couponHtml}
+
+      ${_role === 'admin' && e.status !== 'Discontinued' && e.status !== 'Complete' ? `
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--red);margin-bottom:10px">Danger Zone</div>
+          <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid rgba(192,57,43,0.3)" onclick="openDiscontinueModal('${enrolId}','${e.name}')">
+            ⚠ Discontinue Scheme
+          </button>
+          <p style="font-size:11px;color:var(--text-soft);margin-top:6px">This will mark the scheme as discontinued and notify the customer via SMS.</p>
+        </div>` : ''}
     `;
   } catch(e) {
     document.getElementById('dm-body').innerHTML = '<p style="color:var(--red)">Error loading detail.</p>';
@@ -1324,7 +1373,55 @@ async function loadHalfReg() {
   } catch(e) {}
 }
 
-// ── Audit Log ─────────────────────────────────────────────
+// ── Discontinue Scheme ────────────────────────────────────
+function openDiscontinueModal(enrolId, name) {
+  document.getElementById('disc-enrol-id').value = enrolId;
+  document.getElementById('disc-sub').textContent = enrolId + ' · ' + name;
+  document.getElementById('disc-reason-select').value = '';
+  document.getElementById('disc-other-fg').style.display = 'none';
+  document.getElementById('disc-other-text').value = '';
+  openModal('discontinue-modal');
+}
+
+function onDiscReasonChange() {
+  const val = document.getElementById('disc-reason-select').value;
+  document.getElementById('disc-other-fg').style.display = val === 'Other' ? '' : 'none';
+}
+
+async function confirmDiscontinue() {
+  const enrolId = document.getElementById('disc-enrol-id').value;
+  const reasonSel = document.getElementById('disc-reason-select').value;
+  const reasonOther = document.getElementById('disc-other-text').value.trim();
+  const reason = reasonSel === 'Other' ? (reasonOther || 'Other') : reasonSel;
+
+  if (!reason) { showToast('Please select a reason.', 'error'); return; }
+
+  const btn = document.getElementById('disc-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Processing…';
+
+  try {
+    const res = await fetch(API + '/api/gms-discontinue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ enrolmentId: enrolId, reason })
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = 'Confirm Discontinue';
+    if (data.success) {
+      closeModal('discontinue-modal');
+      closeModal('detail-modal');
+      showToast('Scheme discontinued. Customer SMS sent.', 'ok');
+      loadEnrolments();
+      loadOverview();
+    } else {
+      showToast(data.message || 'Failed.', 'error');
+    }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Confirm Discontinue';
+    showToast('Connection error.', 'error');
+  }
+}
+
 async function loadAuditLog() {
   try {
     const res  = await fetch(API + '/api/gms-audit-log', { headers: { 'x-staff-token': _token } });
