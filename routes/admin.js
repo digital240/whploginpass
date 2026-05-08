@@ -1,6 +1,9 @@
 // routes/admin.js — Staff login, user management, menu, branches
 const axios  = require('axios');
+const path   = require('path');
 const { createStaffToken, staffAuth, adminOnly, getStaff } = require('../helpers/auth');
+
+const DASHBOARD_PATH = path.resolve(__dirname, '../gms-dashboard.html');
 
 const BRANCHES = ['Borivali', 'Vashi', 'Nalasopara', 'Vile Parle'];
 let _menuCache = null, _menuCacheTime = 0;
@@ -72,8 +75,8 @@ module.exports = function(app, cache) {
   });
 
   // ── GET /whp_admin ───────────────────────────────────
-  app.get('/whp_admin',   (req, res) => res.sendFile(__dirname + '/../gms-dashboard.html'));
-  app.get('/whp_admin/*', (req, res) => res.sendFile(__dirname + '/../gms-dashboard.html'));
+  app.get('/whp_admin',   (req, res) => res.sendFile(DASHBOARD_PATH));
+  app.get('/whp_admin/*', (req, res) => res.sendFile(DASHBOARD_PATH));
 
   console.log('[GMS] Admin routes loaded');
 };
