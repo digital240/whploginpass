@@ -499,7 +499,12 @@ module.exports = function(app, cache) {
       const [upi]          = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE pay_method='UPI Auto-debit'");
       const [store]        = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE pay_method='Pay at Store'");
       const [totalAmt]     = await db.query("SELECT SUM(total_contribution) as n FROM gms_enrolments WHERE status NOT IN ('Discontinued')");
-      const [paidAmt]      = await db.query("SELECT SUM(amount) as n FROM gms_payments WHERE status='Paid'");
+      const [paidAmt] = await db.query(`
+  SELECT 
+    (SELECT COALESCE(SUM(amount),0) FROM gms_payments WHERE status='Paid') +
+    (SELECT COALESCE(SUM(amount),0) FROM gms_late_fees)
+  as n
+`);
       const [maturingSoon] = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE maturity_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) AND status='Active'");
       const [halfReg]      = await db.query("SELECT COUNT(*) as n FROM gms_half_registrations WHERE converted=0");
 
