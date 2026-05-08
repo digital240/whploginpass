@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WHP GMS Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand:#d16c6c;--brand-dark:#b84f4f;--brand-deep:#5a2a32;
+  --gold:#c8a96e;--gold-light:#e8d5a3;
+  --bg:#fdf6f0;--white:#fff;--surface:#fff9f5;
+  --line:rgba(90,42,50,0.12);--line-dark:rgba(90,42,50,0.25);
+  --text:#2c1810;--text-mid:#6b4040;--text-soft:#a07070;
+  --green:#2d7a4f;--green-bg:#e8f5ee;
+  --amber:#b8892a;--amber-bg:#fff8e8;
+  --red:#c0392b;--red-bg:#fce8e8;
+  --blue:#1a5fa8;--blue-bg:#e8f0fc;
+  --ff:'Jost',sans-serif;--ffd:'Playfair Display',serif;
+  --radius:10px;--radius-lg:14px;
+  --shadow:0 2px 16px rgba(90,42,50,0.08);
+  --sidebar-w:220px;--hdr-h:56px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--ff);background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* ── LOGIN SCREEN ── */
+#login-screen{
+  display:flex;align-items:center;justify-content:center;
+  min-height:100vh;background:var(--brand-deep);
+}
+.login-box{
+  background:var(--white);border-radius:var(--radius-lg);
+  padding:40px 36px;width:100%;max-width:380px;
+  box-shadow:0 24px 64px rgba(26,10,13,0.4);
+}
+.login-logo{
+  font-family:var(--ffd);font-size:22px;color:var(--brand-deep);
+  text-align:center;margin-bottom:6px;font-weight:600;
+}
+.login-sub{font-size:12px;color:var(--text-soft);text-align:center;margin-bottom:28px;}
+.login-box label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-soft);display:block;margin-bottom:6px;}
+.login-box input{
+  width:100%;padding:11px 14px;border:1.5px solid var(--line-dark);
+  border-radius:var(--radius);font-family:var(--ff);font-size:14px;
+  color:var(--text);background:#fdf8f5;outline:none;
+  transition:border-color .2s;margin-bottom:14px;
+}
+.login-box input:focus{border-color:var(--brand);background:#fff;}
+.login-hint{font-size:11px;color:var(--red);margin-top:-10px;margin-bottom:12px;min-height:16px;}
+.btn-login{
+  width:100%;padding:13px;background:linear-gradient(135deg,var(--brand-deep),var(--brand));
+  color:#fff;border:none;border-radius:var(--radius);font-family:var(--ff);
+  font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.06em;
+  transition:opacity .2s;
+}
+.btn-login:hover{opacity:0.9;}
+.btn-login:disabled{opacity:0.5;cursor:not-allowed;}
+
+/* ── APP SHELL ── */
+#app{display:none;min-height:100vh;}
+
+/* Header */
+.hdr{
+  height:var(--hdr-h);background:var(--brand-deep);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px 0 0;position:sticky;top:0;z-index:100;
+  box-shadow:0 2px 12px rgba(26,10,13,0.3);
+}
+.hdr-left{display:flex;align-items:center;gap:0;}
+.hdr-logo{
+  width:var(--sidebar-w);padding:0 20px;
+  font-family:var(--ffd);font-size:17px;color:var(--gold-light);
+  font-weight:600;letter-spacing:0.04em;flex-shrink:0;
+}
+.hdr-logo span{color:var(--gold);}
+.hdr-right{display:flex;align-items:center;gap:12px;}
+.hdr-badge{
+  padding:4px 12px;border-radius:100px;font-size:11px;font-weight:600;
+  letter-spacing:0.06em;text-transform:uppercase;
+}
+.hdr-badge.admin{background:rgba(209,108,108,0.25);color:#f0b0b0;}
+.hdr-badge.branch{background:rgba(200,169,110,0.25);color:var(--gold-light);}
+.hdr-user{font-size:12px;color:rgba(255,255,255,0.6);}
+.btn-logout-hdr{
+  padding:6px 14px;background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);
+  border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;
+  font-family:var(--ff);letter-spacing:0.06em;transition:all .2s;
+}
+.btn-logout-hdr:hover{background:rgba(255,255,255,0.15);color:#fff;}
+
+/* Layout */
+.app-body{display:flex;min-height:calc(100vh - var(--hdr-h));}
+
+/* Sidebar */
+.sidebar{
+  width:var(--sidebar-w);background:var(--brand-deep);
+  flex-shrink:0;position:sticky;top:var(--hdr-h);
+  height:calc(100vh - var(--hdr-h));overflow-y:auto;
+  padding:16px 0 32px;
+}
+.nav-section{
+  font-size:9px;font-weight:700;letter-spacing:0.14em;
+  text-transform:uppercase;color:rgba(255,255,255,0.25);
+  padding:16px 20px 6px;
+}
+.nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 20px;font-size:13px;color:rgba(255,255,255,0.6);
+  cursor:pointer;transition:all .15s;border-left:3px solid transparent;
+  font-weight:400;
+}
+.nav-item:hover{color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.06);}
+.nav-item.active{
+  color:#fff;border-left-color:var(--gold);
+  background:rgba(200,169,110,0.12);font-weight:500;
+}
+.nav-item.admin-only{display:none;}
+.nav-icon{font-size:16px;flex-shrink:0;}
+
+/* Main content */
+.main{flex:1;padding:28px;overflow-x:hidden;}
+.page{display:none;animation:fadeIn .25s ease;}
+.page.active{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+
+/* Page header */
+.page-hdr{margin-bottom:24px;}
+.page-title{font-family:var(--ffd);font-size:24px;font-weight:500;color:var(--brand-deep);}
+.page-sub{font-size:13px;color:var(--text-soft);margin-top:4px;}
+.page-hdr-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+
+/* Cards */
+.card{
+  background:var(--white);border-radius:var(--radius-lg);
+  border:1px solid var(--line);box-shadow:var(--shadow);
+  overflow:hidden;
+}
+.card-head{
+  padding:16px 20px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(135deg,#fdf5f0,#fff);
+}
+.card-title{font-family:var(--ffd);font-size:16px;color:var(--brand-deep);font-weight:500;}
+.card-body{padding:20px;}
+
+/* Stat cards */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px;}
+.stat-card{
+  background:var(--white);border-radius:var(--radius-lg);
+  border:1px solid var(--line);padding:20px;
+  position:relative;overflow:hidden;box-shadow:var(--shadow);
+}
+.stat-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:linear-gradient(90deg,var(--brand),var(--gold));
+}
+.stat-num{font-family:var(--ffd);font-size:30px;color:var(--brand-deep);font-weight:600;line-height:1;margin-bottom:6px;}
+.stat-label{font-size:11px;color:var(--text-soft);text-transform:uppercase;letter-spacing:0.08em;}
+.stat-card.green::before{background:linear-gradient(90deg,var(--green),#43a06b);}
+.stat-card.green .stat-num{color:var(--green);}
+.stat-card.amber::before{background:linear-gradient(90deg,var(--amber),#e8b84b);}
+.stat-card.amber .stat-num{color:var(--amber);}
+.stat-card.blue::before{background:linear-gradient(90deg,var(--blue),#3d8bef);}
+.stat-card.blue .stat-num{color:var(--blue);}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:8px 16px;border-radius:8px;font-family:var(--ff);
+  font-size:12px;font-weight:600;cursor:pointer;
+  letter-spacing:0.06em;transition:all .2s;border:none;
+}
+.btn-primary{background:var(--brand);color:#fff;}
+.btn-primary:hover{background:var(--brand-dark);}
+.btn-green{background:var(--green);color:#fff;}
+.btn-green:hover{background:#236640;}
+.btn-amber{background:var(--amber);color:#fff;}
+.btn-amber:hover{background:#8a6620;}
+.btn-outline{background:transparent;color:var(--brand-deep);border:1.5px solid var(--line-dark);}
+.btn-outline:hover{border-color:var(--brand);color:var(--brand);}
+.btn-sm{padding:5px 12px;font-size:11px;border-radius:6px;}
+.btn:disabled{opacity:0.5;cursor:not-allowed;}
+
+/* Badges */
+.badge{padding:3px 10px;border-radius:100px;font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;display:inline-block;}
+.badge-active{background:var(--green-bg);color:var(--green);}
+.badge-matured{background:var(--amber-bg);color:var(--amber);}
+.badge-complete{background:var(--blue-bg);color:var(--blue);}
+.badge-discontinued{background:var(--red-bg);color:var(--red);}
+.badge-admin{background:rgba(209,108,108,0.15);color:var(--brand-deep);}
+.badge-branch{background:rgba(200,169,110,0.15);color:#6b4a10;}
+
+/* Table */
+.tbl-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead tr{background:linear-gradient(135deg,#fdf5f0,#fff);}
+th{padding:11px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-soft);border-bottom:1px solid var(--line);}
+td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#fdf8f5;}
+.td-id{font-family:'Courier New',monospace;font-size:12px;color:var(--brand-deep);font-weight:600;}
+.td-name{font-weight:500;}
+.td-amt{font-family:var(--ffd);font-size:15px;color:var(--brand-deep);}
+.td-muted{color:var(--text-soft);font-size:12px;}
+
+/* Search bar */
+.search-bar{
+  display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center;
+}
+.search-input{
+  flex:1;min-width:200px;padding:9px 14px;
+  border:1.5px solid var(--line-dark);border-radius:var(--radius);
+  font-family:var(--ff);font-size:13px;color:var(--text);
+  background:#fdf8f5;outline:none;transition:border-color .2s;
+}
+.search-input:focus{border-color:var(--brand);background:#fff;}
+.filter-select{
+  padding:9px 14px;border:1.5px solid var(--line-dark);border-radius:var(--radius);
+  font-family:var(--ff);font-size:13px;color:var(--text);
+  background:#fdf8f5;outline:none;cursor:pointer;
+}
+
+/* Payment grid */
+.pay-grid{display:flex;flex-wrap:wrap;gap:5px;margin:12px 0;}
+.pay-cell{
+  width:34px;height:34px;border-radius:7px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-size:8px;font-weight:700;cursor:pointer;transition:transform .15s;
+  position:relative;
+}
+.pay-cell:hover{transform:scale(1.1);}
+.pay-cell.paid{background:linear-gradient(135deg,var(--green),#43a06b);color:#fff;}
+.pay-cell.pending{background:#f5eded;color:var(--text-soft);border:1px dashed rgba(209,108,108,0.3);}
+.pay-cell.current{background:linear-gradient(135deg,var(--brand),#e89090);color:#fff;box-shadow:0 2px 8px rgba(209,108,108,0.4);}
+.pay-cell .mo-num{font-size:8px;line-height:1;}
+.pay-cell .mo-ico{font-size:9px;line-height:1;margin-top:1px;}
+.pay-cell .who-tip{
+  display:none;position:absolute;bottom:110%;left:50%;transform:translateX(-50%);
+  background:var(--brand-deep);color:#fff;font-size:10px;padding:4px 8px;
+  border-radius:6px;white-space:nowrap;z-index:10;font-family:var(--ff);
+  font-weight:400;line-height:1.4;
+}
+.pay-cell.paid:hover .who-tip{display:block;}
+
+/* Modal */
+.modal-backdrop{
+  position:fixed;inset:0;background:rgba(26,10,13,0.6);
+  backdrop-filter:blur(4px);z-index:500;
+  display:none;align-items:center;justify-content:center;padding:16px;
+}
+.modal-backdrop.open{display:flex;}
+.modal-box{
+  background:#fff;border-radius:20px;width:100%;
+  max-width:560px;max-height:90vh;overflow-y:auto;
+  box-shadow:0 24px 80px rgba(26,10,13,0.35);
+  animation:slideUp .3s ease;
+}
+.modal-box.wide{max-width:760px;}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
+.modal-hdr{
+  padding:22px 24px 16px;border-bottom:1px solid var(--line);
+  display:flex;align-items:flex-start;justify-content:space-between;
+  background:linear-gradient(135deg,#fdf5f0,#fff);
+}
+.modal-title{font-family:var(--ffd);font-size:20px;color:var(--brand-deep);font-weight:500;}
+.modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-soft);line-height:1;padding:2px;}
+.modal-body{padding:24px;}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px;}
+
+/* Form elements */
+.fg{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
+.fg label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-soft);}
+.fg input,.fg select,.fg textarea{
+  padding:10px 14px;border:1.5px solid var(--line-dark);border-radius:var(--radius);
+  font-family:var(--ff);font-size:13px;color:var(--text);
+  background:#fdf8f5;outline:none;transition:border-color .2s;
+}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--brand);background:#fff;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+
+/* Toast */
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:var(--brand-deep);color:#fff;padding:12px 24px;
+  border-radius:100px;font-size:13px;z-index:999;
+  transition:transform .3s;white-space:nowrap;
+}
+.toast.show{transform:translateX(-50%) translateY(0);}
+.toast.ok{background:var(--green);}
+.toast.error{background:var(--red);}
+
+/* Info rows */
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);}
+.info-row:last-child{border-bottom:none;}
+.info-label{font-size:12px;color:var(--text-soft);}
+.info-val{font-size:14px;font-weight:500;color:var(--text);}
+.info-val.brand{color:var(--brand-deep);font-family:var(--ffd);}
+.info-val.green{color:var(--green);}
+.info-val.gold{color:var(--amber);font-family:var(--ffd);}
+
+/* OTP strip */
+.otp-strip{background:var(--blue-bg);border:1px solid rgba(26,95,168,0.2);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px;}
+.otp-strip h4{font-size:13px;font-weight:600;color:var(--blue);margin-bottom:4px;}
+.otp-strip p{font-size:12px;color:var(--text-soft);}
+.otp-input-row{display:flex;gap:8px;margin-top:10px;}
+.otp-input-row input{flex:1;padding:10px 14px;border:1.5px solid rgba(26,95,168,0.3);border-radius:8px;font-family:var(--ff);font-size:18px;letter-spacing:0.2em;text-align:center;outline:none;}
+.otp-input-row input:focus{border-color:var(--blue);}
+
+/* Audit row */
+.audit-row{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);}
+.audit-row:last-child{border-bottom:none;}
+.audit-dot{width:8px;height:8px;border-radius:50%;background:var(--brand);flex-shrink:0;margin-top:5px;}
+.audit-content{flex:1;}
+.audit-action{font-size:13px;font-weight:500;color:var(--text);}
+.audit-meta{font-size:11px;color:var(--text-soft);margin-top:2px;}
+
+/* Lock indicator */
+.lock-banner{
+  background:var(--amber-bg);border:1px solid rgba(184,137,42,0.3);
+  border-radius:var(--radius);padding:12px 16px;
+  font-size:12px;color:var(--amber);margin-bottom:16px;
+  display:flex;align-items:center;gap:8px;
+}
+
+/* Responsive */
+@media(max-width:768px){
+  .sidebar{display:none;}
+  .main{padding:16px;}
+  .stats-grid{grid-template-columns:repeat(2,1fr);}
+  .form-row{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN SCREEN ── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">WHP ✦ GMS</div>
+    <div class="login-sub">Admin &amp; Branch Manager Portal</div>
+    <div class="fg">
+      <label>Username</label>
+      <input type="text" id="l-user" placeholder="e.g. whp_admin" autocomplete="username">
+    </div>
+    <div class="fg">
+      <label>Password</label>
+      <input type="password" id="l-pass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="login-hint" id="l-hint"></div>
+    <button class="btn-login" id="l-btn" onclick="doLogin()">Login →</button>
+  </div>
+</div>
+
+<!-- ── APP SHELL ── -->
+<div id="app">
+
+  <!-- Header -->
+  <header class="hdr">
+    <div class="hdr-left">
+      <div class="hdr-logo">WHP <span>✦</span> GMS Admin</div>
+    </div>
+    <div class="hdr-right">
+      <span class="hdr-badge" id="hdr-role-badge">Admin</span>
+      <span class="hdr-user" id="hdr-user-label"></span>
+      <button class="btn-logout-hdr" onclick="doLogout()">Logout</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="nav-section">Main</div>
+      <div class="nav-item active" onclick="showPage('overview')">
+        <span class="nav-icon">📊</span> Overview
+      </div>
+      <div class="nav-item" onclick="showPage('enrolments')">
+        <span class="nav-icon">📋</span> Enrolments
+      </div>
+      <div class="nav-item" onclick="showPage('reports')">
+        <span class="nav-icon">📈</span> Reports
+      </div>
+
+      <div class="nav-section admin-only">Admin Only</div>
+      <div class="nav-item admin-only" onclick="showPage('users')">
+        <span class="nav-icon">👥</span> Manage Users
+      </div>
+      <div class="nav-item admin-only" onclick="showPage('half-reg')">
+        <span class="nav-icon">⏳</span> Half Registrations
+      </div>
+      <div class="nav-item admin-only" onclick="showPage('audit')">
+        <span class="nav-icon">🔍</span> Audit Log
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+
+      <!-- ══ PAGE: OVERVIEW ══ -->
+      <div class="page active" id="page-overview">
+        <div class="page-hdr">
+          <div class="page-title">Dashboard Overview</div>
+          <div class="page-sub" id="overview-branch-label">All branches</div>
+        </div>
+
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card"><div class="stat-num" id="s-total">—</div><div class="stat-label">Total Schemes</div></div>
+          <div class="stat-card green"><div class="stat-num" id="s-active">—</div><div class="stat-label">Active</div></div>
+          <div class="stat-card amber"><div class="stat-num" id="s-matured">—</div><div class="stat-label">Matured</div></div>
+          <div class="stat-card blue"><div class="stat-num" id="s-complete">—</div><div class="stat-label">Completed</div></div>
+          <div class="stat-card"><div class="stat-num" id="s-collected">—</div><div class="stat-label">Total Collected</div></div>
+          <div class="stat-card amber"><div class="stat-num" id="s-soon">—</div><div class="stat-label">Maturing (30d)</div></div>
+          <div class="stat-card"><div class="stat-num" id="s-half">—</div><div class="stat-label">Half Registrations</div></div>
+          <div class="stat-card"><div class="stat-num" id="s-disc">—</div><div class="stat-label">Discontinued</div></div>
+        </div>
+
+        <!-- Recent enrolments -->
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">Recent Enrolments</span>
+            <button class="btn btn-outline btn-sm" onclick="showPage('enrolments')">View All →</button>
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr>
+                <th>ID</th><th>Name</th><th>Branch</th><th>Monthly</th><th>Status</th><th>Enrolled</th>
+              </tr></thead>
+              <tbody id="recent-tbl-body">
+                <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE: ENROLMENTS ══ -->
+      <div class="page" id="page-enrolments">
+        <div class="page-hdr-row">
+          <div class="page-hdr">
+            <div class="page-title">Enrolments</div>
+            <div class="page-sub" id="enrol-branch-label">All branches</div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="loadEnrolments()">↻ Refresh</button>
+        </div>
+
+        <div class="search-bar">
+          <input class="search-input" id="search-input" placeholder="Search by ID, name or mobile…" oninput="filterEnrolments()">
+          <select class="filter-select" id="filter-status" onchange="filterEnrolments()">
+            <option value="">All Status</option>
+            <option value="Active">Active</option>
+            <option value="Matured">Matured</option>
+            <option value="Complete">Complete</option>
+            <option value="Discontinued">Discontinued</option>
+          </select>
+          <select class="filter-select admin-only" id="filter-branch" onchange="filterEnrolments()" style="display:none">
+            <option value="">All Branches</option>
+            <option>Borivali</option><option>Vashi</option>
+            <option>Nalasopara</option><option>Vile Parle</option>
+          </select>
+        </div>
+
+        <div class="card">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr>
+                <th>ID</th><th>Name</th><th>Mobile</th>
+                <th>Branch</th><th>Monthly</th><th>Paid</th>
+                <th>Status</th><th>Maturity</th><th></th>
+              </tr></thead>
+              <tbody id="enrol-tbl-body">
+                <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE: REPORTS ══ -->
+      <div class="page" id="page-reports">
+        <div class="page-hdr">
+          <div class="page-title">Reports</div>
+          <div class="page-sub">Payment collection &amp; scheme summary</div>
+        </div>
+        <div class="stats-grid" id="report-stats">
+          <div class="stat-card green"><div class="stat-num" id="r-paid">—</div><div class="stat-label">Total Paid Amount</div></div>
+          <div class="stat-card"><div class="stat-num" id="r-upi">—</div><div class="stat-label">UPI Schemes</div></div>
+          <div class="stat-card"><div class="stat-num" id="r-store">—</div><div class="stat-label">Store Schemes</div></div>
+          <div class="stat-card amber"><div class="stat-num" id="r-soon2">—</div><div class="stat-label">Maturing in 30 days</div></div>
+        </div>
+        <div class="card" style="margin-top:8px">
+          <div class="card-head"><span class="card-title">Branch Summary</span></div>
+          <div class="card-body">
+            <div class="tbl-wrap">
+              <table>
+                <thead><tr><th>Branch</th><th>Total</th><th>Active</th><th>Matured</th><th>Complete</th></tr></thead>
+                <tbody id="branch-summary-body">
+                  <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-soft)">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE: MANAGE USERS (Admin only) ══ -->
+      <div class="page" id="page-users">
+        <div class="page-hdr-row">
+          <div class="page-hdr">
+            <div class="page-title">Manage Users</div>
+            <div class="page-sub">Admin and branch manager accounts</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openCreateUserModal()">+ Create User</button>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">Current Accounts</span></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Username</th><th>Role</th><th>Branch</th><th>Name</th><th>Actions</th></tr></thead>
+              <tbody id="users-tbl-body">
+                <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE: HALF REGISTRATIONS (Admin only) ══ -->
+      <div class="page" id="page-half-reg">
+        <div class="page-hdr">
+          <div class="page-title">Half Registrations</div>
+          <div class="page-sub">Form started but not submitted</div>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Phone</th><th>Name</th><th>Branch</th><th>Instalment</th><th>Step Reached</th><th>Date</th></tr></thead>
+              <tbody id="half-tbl-body">
+                <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE: AUDIT LOG (Admin only) ══ -->
+      <div class="page" id="page-audit">
+        <div class="page-hdr">
+          <div class="page-title">Audit Log</div>
+          <div class="page-sub">All changes — who did what, when, from which branch</div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div id="audit-list">
+              <p style="color:var(--text-soft);text-align:center;padding:20px">Loading…</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ══ MODAL: ENROLMENT DETAIL ══ -->
+<div class="modal-backdrop" id="detail-modal" onclick="onBdClick(event,'detail-modal')">
+  <div class="modal-box wide">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title" id="dm-title">Enrolment Detail</div>
+        <div style="font-size:12px;color:var(--text-soft);margin-top:3px" id="dm-sub"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('detail-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="dm-body">Loading…</div>
+  </div>
+</div>
+
+<!-- ══ MODAL: MARK PAID ══ -->
+<div class="modal-backdrop" id="markpaid-modal" onclick="onBdClick(event,'markpaid-modal')">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div class="modal-title" id="mp-title">Mark Month Paid</div>
+      <button class="modal-close" onclick="closeModal('markpaid-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="mp-lock-banner" class="lock-banner" style="display:none">
+        🔒 This enrolment is currently being edited by <span id="mp-lock-user"></span>
+      </div>
+      <div class="fg">
+        <label>Enrolment ID</label>
+        <input type="text" id="mp-enrol-id" readonly style="opacity:0.7">
+      </div>
+      <div class="fg">
+        <label>Month Number</label>
+        <input type="number" id="mp-month" min="1" max="23" placeholder="e.g. 1">
+      </div>
+      <div class="fg">
+        <label>Late Fee (₹) — optional</label>
+        <input type="number" id="mp-latefee" placeholder="0" min="0">
+      </div>
+      <div class="fg">
+        <label>Notes</label>
+        <input type="text" id="mp-notes" placeholder="Any remarks…">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('markpaid-modal')">Cancel</button>
+      <button class="btn btn-green" id="mp-confirm-btn" onclick="confirmMarkPaid()">✓ Mark as Paid</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: GENERATE COUPON (Admin + OTP) ══ -->
+<div class="modal-backdrop" id="coupon-modal" onclick="onBdClick(event,'coupon-modal')">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div class="modal-title">Generate Redemption Coupon</div>
+      <button class="modal-close" onclick="closeModal('coupon-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="otp-strip">
+        <h4>Customer OTP Verification Required</h4>
+        <p>Send OTP to customer's registered mobile <strong id="coupon-phone"></strong> to confirm coupon generation.</p>
+        <div class="otp-input-row">
+          <input type="number" id="coupon-otp-input" placeholder="Enter OTP" maxlength="6">
+          <button class="btn btn-outline btn-sm" id="coupon-send-btn" onclick="sendCouponOtp()">Send OTP</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-soft);margin-top:8px" id="coupon-otp-hint"></div>
+      </div>
+      <div class="fg">
+        <label>Enrolment</label>
+        <input type="text" id="coupon-enrol-id" readonly style="opacity:0.7">
+      </div>
+      <div class="fg">
+        <label>Redeemable Amount</label>
+        <input type="text" id="coupon-amount" readonly style="opacity:0.7;font-family:var(--ffd);font-size:18px;color:var(--green)">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('coupon-modal')">Cancel</button>
+      <button class="btn btn-green" id="coupon-confirm-btn" onclick="confirmCoupon()" disabled>Generate &amp; Send Coupon</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: CREATE USER (Admin only) ══ -->
+<div class="modal-backdrop" id="user-modal" onclick="onBdClick(event,'user-modal')">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div class="modal-title" id="um-title">Create User</div>
+      <button class="modal-close" onclick="closeModal('user-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="fg">
+          <label>Username *</label>
+          <input type="text" id="um-username" placeholder="e.g. borivali2">
+        </div>
+        <div class="fg">
+          <label>Display Name *</label>
+          <input type="text" id="um-name" placeholder="e.g. Borivali Manager 2">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="fg">
+          <label>Role *</label>
+          <select id="um-role" onchange="onRoleChange()">
+            <option value="branch">Branch Manager</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="fg" id="um-branch-fg">
+          <label>Branch *</label>
+          <select id="um-branch">
+            <option>Borivali</option>
+            <option>Vashi</option>
+            <option>Nalasopara</option>
+            <option>Vile Parle</option>
+          </select>
+        </div>
+      </div>
+      <div class="fg">
+        <label>Password *</label>
+        <input type="password" id="um-password" placeholder="Set a password">
+      </div>
+      <div style="font-size:12px;color:var(--text-soft);background:var(--amber-bg);border:1px solid rgba(184,137,42,0.2);border-radius:8px;padding:10px 14px;">
+        ⚠ This creates the account in the backend. Share the username &amp; password securely with the staff member.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('user-modal')">Cancel</button>
+      <button class="btn btn-primary" id="um-save-btn" onclick="saveUser()">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: CHANGE PASSWORD ══ -->
+<div class="modal-backdrop" id="chpass-modal" onclick="onBdClick(event,'chpass-modal')">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div class="modal-title">Change Password</div>
+      <button class="modal-close" onclick="closeModal('chpass-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="fg">
+        <label>Username</label>
+        <input type="text" id="cp-username" readonly style="opacity:0.7">
+      </div>
+      <div class="fg">
+        <label>New Password *</label>
+        <input type="password" id="cp-newpass" placeholder="Enter new password">
+      </div>
+      <div class="fg">
+        <label>Confirm Password *</label>
+        <input type="password" id="cp-confirm" placeholder="Repeat new password">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('chpass-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmChangePass()">Save Password</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'https://yellowgreen-jay-842557.hostingersite.com';
+let _token  = null;
+let _role   = null;
+let _branch = null;
+let _uname  = null;
+let _allEnrolments = [];
+let _currentEnrolId = null;
+let _couponOtpVerified = false;
+
+// ── Helpers ──────────────────────────────────────────────
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (type||'') + ' show';
+  setTimeout(() => t.className = 'toast', 3000);
+}
+function fmtAmt(n) { return '₹' + Number(n||0).toLocaleString('en-IN'); }
+function fmtDate(d) {
+  if (!d) return '—';
+  const s = String(d).trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return iso[3]+' '+mo[parseInt(iso[2])-1]+' '+iso[1];
+  }
+  return s;
+}
+function statusBadge(s) {
+  const map = { Active:'active', Matured:'matured', Complete:'complete', Discontinued:'discontinued' };
+  return `<span class="badge badge-${map[s]||'active'}">${s||'Active'}</span>`;
+}
+function openModal(id) { document.getElementById(id).classList.add('open'); document.body.style.overflow = 'hidden'; }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow = ''; }
+function onBdClick(e, id) { if (e.target.id === id) closeModal(id); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.modal-backdrop.open').forEach(m => m.classList.remove('open')); });
+
+// ── Auth ─────────────────────────────────────────────────
+async function doLogin() {
+  const username = document.getElementById('l-user').value.trim();
+  const password = document.getElementById('l-pass').value;
+  const btn = document.getElementById('l-btn');
+  const hint = document.getElementById('l-hint');
+  if (!username || !password) { hint.textContent = 'Enter username and password.'; return; }
+  btn.disabled = true; btn.textContent = 'Logging in…';
+  try {
+    const res  = await fetch(API + '/api/gms-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      hint.textContent = data.message || 'Invalid credentials.';
+      btn.disabled = false; btn.textContent = 'Login →';
+      return;
+    }
+    _token  = data.token;
+    _role   = data.role;
+    _branch = data.branch;
+    _uname  = data.name || username;
+    localStorage.setItem('gms_staff_token', _token);
+    localStorage.setItem('gms_staff_role',  _role);
+    localStorage.setItem('gms_staff_branch', _branch || '');
+    localStorage.setItem('gms_staff_name',   _uname);
+    bootApp();
+  } catch(e) {
+    hint.textContent = 'Connection error. Try again.';
+    btn.disabled = false; btn.textContent = 'Login →';
+  }
+}
+
+function doLogout() {
+  _token = _role = _branch = _uname = null;
+  localStorage.removeItem('gms_staff_token');
+  localStorage.removeItem('gms_staff_role');
+  localStorage.removeItem('gms_staff_branch');
+  localStorage.removeItem('gms_staff_name');
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+function bootApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  // Role badge + user label
+  const badge = document.getElementById('hdr-role-badge');
+  badge.textContent = _role === 'admin' ? 'Admin' : ('Branch: ' + _branch);
+  badge.className = 'hdr-badge ' + (_role === 'admin' ? 'admin' : 'branch');
+  document.getElementById('hdr-user-label').textContent = _uname;
+
+  // Show/hide admin-only nav items + filter
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = _role === 'admin' ? '' : 'none';
+  });
+  if (_role === 'admin') {
+    document.getElementById('filter-branch').style.display = '';
+  }
+  // Branch labels
+  const bl = _role === 'admin' ? 'All branches' : (_branch + ' branch');
+  document.getElementById('overview-branch-label').textContent = bl;
+  document.getElementById('enrol-branch-label').textContent = bl;
+
+  loadOverview();
+  loadEnrolments();
+  if (_role === 'admin') {
+    loadUsers();
+    loadHalfReg();
+    loadAuditLog();
+    loadReports();
+  } else {
+    loadReports();
+  }
+}
+
+// Auto-login from localStorage
+window.addEventListener('DOMContentLoaded', () => {
+  const tok = localStorage.getItem('gms_staff_token');
+  if (tok) {
+    _token  = tok;
+    _role   = localStorage.getItem('gms_staff_role')   || 'branch';
+    _branch = localStorage.getItem('gms_staff_branch') || '';
+    _uname  = localStorage.getItem('gms_staff_name')   || '';
+    bootApp();
+  }
+});
+
+// ── Navigation ────────────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name)?.classList.add('active');
+  event?.currentTarget?.classList.add('active');
+}
+
+// ── Overview ─────────────────────────────────────────────
+async function loadOverview() {
+  try {
+    const res  = await fetch(API + '/api/gms-reports', { headers: { 'x-staff-token': _token } });
+    const data = await res.json();
+    if (!data.success) return;
+    const s = data.stats;
+    document.getElementById('s-total').textContent    = s.total;
+    document.getElementById('s-active').textContent   = s.active;
+    document.getElementById('s-matured').textContent  = s.matured;
+    document.getElementById('s-complete').textContent = s.complete;
+    document.getElementById('s-collected').textContent = fmtAmt(s.paidAmount);
+    document.getElementById('s-soon').textContent     = s.maturingSoon;
+    document.getElementById('s-half').textContent     = s.halfReg;
+    document.getElementById('s-disc').textContent     = s.discontinued;
+  } catch(e) { console.error('Overview error:', e); }
+}
+
+// ── Enrolments ────────────────────────────────────────────
+async function loadEnrolments() {
+  try {
+    const res  = await fetch(API + '/api/gms-enrolments', { headers: { 'x-staff-token': _token } });
+    const data = await res.json();
+    if (!data.success) return;
+    _allEnrolments = data.rows || [];
+    renderEnrolTable(_allEnrolments);
+    renderRecentTable(_allEnrolments.slice(0, 6));
+  } catch(e) { console.error('Enrolments error:', e); }
+}
+
+function filterEnrolments() {
+  const q      = document.getElementById('search-input').value.toLowerCase();
+  const status = document.getElementById('filter-status').value;
+  const branch = _role === 'admin' ? document.getElementById('filter-branch').value : _branch;
+  let rows = _allEnrolments;
+  if (q) rows = rows.filter(r => (r.enrolment_id||'').toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q) || (r.phone||'').includes(q));
+  if (status) rows = rows.filter(r => r.status === status);
+  if (branch && _role !== 'admin') rows = rows.filter(r => r.preferred_branch === branch);
+  else if (branch && _role === 'admin') rows = rows.filter(r => r.preferred_branch === branch);
+  renderEnrolTable(rows);
+}
+
+function renderEnrolTable(rows) {
+  const tbody = document.getElementById('enrol-tbl-body');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-soft)">No enrolments found.</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td class="td-id">${r.enrolment_id}</td>
+      <td class="td-name">${r.name}</td>
+      <td class="td-muted">+91 ${r.phone}</td>
+      <td><span class="badge badge-branch">${r.preferred_branch||'—'}</span></td>
+      <td class="td-amt">${fmtAmt(r.instalment_amt)}</td>
+      <td class="td-muted">${r.payments_made||0} / ${r.pay_months||'—'}</td>
+      <td>${statusBadge(r.status)}</td>
+      <td class="td-muted">${fmtDate(r.maturity_date)}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="openDetail('${r.enrolment_id}')">View →</button></td>
+    </tr>`).join('');
+}
+
+function renderRecentTable(rows) {
+  const tbody = document.getElementById('recent-tbl-body');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-soft)">No enrolments yet.</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `
+    <tr style="cursor:pointer" onclick="openDetail('${r.enrolment_id}')">
+      <td class="td-id">${r.enrolment_id}</td>
+      <td class="td-name">${r.name}</td>
+      <td><span class="badge badge-branch">${r.preferred_branch||'—'}</span></td>
+      <td class="td-amt">${fmtAmt(r.instalment_amt)}</td>
+      <td>${statusBadge(r.status)}</td>
+      <td class="td-muted">${fmtDate(r.enrolment_date||r.created_at)}</td>
+    </tr>`).join('');
+}
+
+// ── Enrolment Detail ──────────────────────────────────────
+async function openDetail(enrolId) {
+  _currentEnrolId = enrolId;
+  document.getElementById('dm-title').textContent = enrolId;
+  document.getElementById('dm-sub').textContent = 'Loading…';
+  document.getElementById('dm-body').innerHTML = '<p style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</p>';
+  openModal('detail-modal');
+
+  try {
+    const res  = await fetch(API + '/api/gms-enrolment/' + enrolId, { headers: { 'x-staff-token': _token } });
+    const data = await res.json();
+    if (!data.success) { document.getElementById('dm-body').innerHTML = '<p style="color:var(--red)">Failed to load.</p>'; return; }
+    const e = data.enrolment;
+    const payments = data.payments || [];
+    const fees = data.fees || [];
+    document.getElementById('dm-sub').textContent = e.name + ' · +91 ' + e.phone;
+
+    // Build payment grid
+    const tenure = parseInt(e.tenure_months) || 17;
+    const made   = parseInt(e.payments_made) || 0;
+    const cells  = Array.from({length: tenure}, (_, i) => {
+      const mn  = i + 1;
+      const pay = payments.find(p => p.month_num === mn);
+      const isPaid = pay?.status === 'Paid';
+      const isCurr = !isPaid && mn === made + 1 && (e.status||'').toLowerCase() === 'active';
+      const cls  = isPaid ? 'paid' : isCurr ? 'current' : 'pending';
+      const ico  = isPaid ? '✓' : isCurr ? '→' : '·';
+      const who  = isPaid ? `Paid by ${pay.collected_by||'—'} @ ${pay.collected_branch||'—'}\n${fmtDate(pay.paid_at)}` : '';
+      const canMark = !isPaid && (_role === 'admin' || (e.preferred_branch === _branch));
+      return `<div class="pay-cell ${cls}" title="Month ${mn}" ${canMark ? `onclick="openMarkPaid('${enrolId}',${mn})"` : ''}>
+        <span class="mo-num">M${mn}</span>
+        <span class="mo-ico">${ico}</span>
+        ${isPaid ? `<div class="who-tip">${who}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    // Late fees
+    const feesHtml = fees.length ? fees.map(f =>
+      `<div class="info-row"><span class="info-label">Month ${f.month_num} late fee</span><span class="info-val" style="color:var(--red)">${fmtAmt(f.amount)}</span></div>`
+    ).join('') : '<p style="font-size:13px;color:var(--text-soft)">No late fees applied.</p>';
+
+    // Coupon section
+    const canCoupon = _role === 'admin' && (e.status === 'Matured' || parseInt(e.payments_made) >= parseInt(e.pay_months));
+    const couponHtml = e.coupon_code
+      ? `<div style="background:var(--green-bg);border:1px solid rgba(45,122,79,0.2);border-radius:var(--radius);padding:16px 20px;margin-top:16px">
+           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--green);margin-bottom:4px">Coupon Generated</div>
+           <div style="font-family:var(--ffd);font-size:24px;color:var(--brand-deep);font-weight:600">${e.coupon_code}</div>
+           <div style="font-size:12px;color:var(--text-soft);margin-top:4px">Worth ${fmtAmt(e.total_redeemable)} · Sent to +91 ${e.phone}</div>
+         </div>`
+      : (canCoupon ? `<button class="btn btn-green" style="margin-top:16px" onclick="openCouponModal('${enrolId}','${e.phone}','${e.total_redeemable}')">🎁 Generate Coupon</button>` : '');
+
+    // Branch lock warning
+    const canEdit = _role === 'admin' || e.preferred_branch === _branch;
+    const lockHtml = !canEdit ? `<div class="lock-banner">🔒 This enrolment belongs to <strong>${e.preferred_branch}</strong> branch. You can view only.</div>` : '';
+
+    document.getElementById('dm-body').innerHTML = `
+      ${lockHtml}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+        <div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Customer Info</div>
+          <div class="info-row"><span class="info-label">Name</span><span class="info-val">${e.name}</span></div>
+          <div class="info-row"><span class="info-label">Mobile</span><span class="info-val">+91 ${e.phone}</span></div>
+          <div class="info-row"><span class="info-label">Email</span><span class="info-val">${e.email||'—'}</span></div>
+          <div class="info-row"><span class="info-label">Branch</span><span class="info-val"><span class="badge badge-branch">${e.preferred_branch||'—'}</span></span></div>
+          <div class="info-row"><span class="info-label">Pay Method</span><span class="info-val">${e.pay_method||'—'}</span></div>
+        </div>
+        <div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Scheme Details</div>
+          <div class="info-row"><span class="info-label">Monthly</span><span class="info-val brand">${fmtAmt(e.instalment_amt)}</span></div>
+          <div class="info-row"><span class="info-label">Tenure</span><span class="info-val">${e.tenure_months} months</span></div>
+          <div class="info-row"><span class="info-label">Paid</span><span class="info-val green">${e.payments_made||0} / ${e.pay_months} months</span></div>
+          <div class="info-row"><span class="info-label">Redeemable</span><span class="info-val gold">${fmtAmt(e.total_redeemable)}</span></div>
+          <div class="info-row"><span class="info-label">Maturity</span><span class="info-val">${fmtDate(e.maturity_date)}</span></div>
+          <div class="info-row"><span class="info-label">Status</span><span class="info-val">${statusBadge(e.status)}</span></div>
+        </div>
+      </div>
+
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Payment History <span style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-soft)">(click a pending month to mark paid)</span></div>
+      <div class="pay-grid">${cells}</div>
+
+      ${canEdit ? `<div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="openMarkPaid('${enrolId}', ${made+1})">+ Mark Next Payment</button></div>` : ''}
+
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Late Fees</div>
+        ${feesHtml}
+        ${canEdit ? `<button class="btn btn-amber btn-sm" style="margin-top:10px" onclick="openLateFeeModal('${enrolId}')">Apply Late Fee</button>` : ''}
+      </div>
+
+      ${couponHtml}
+    `;
+  } catch(e) {
+    document.getElementById('dm-body').innerHTML = '<p style="color:var(--red)">Error loading detail.</p>';
+  }
+}
+
+// ── Mark Paid ─────────────────────────────────────────────
+function openMarkPaid(enrolId, monthNum) {
+  // Check branch permission
+  const enrol = _allEnrolments.find(e => e.enrolment_id === enrolId);
+  if (enrol && _role !== 'admin' && enrol.preferred_branch !== _branch) {
+    showToast('You can only mark payments for ' + _branch + ' branch.', 'error');
+    return;
+  }
+  document.getElementById('mp-enrol-id').value = enrolId;
+  document.getElementById('mp-month').value     = monthNum || '';
+  document.getElementById('mp-latefee').value   = '';
+  document.getElementById('mp-notes').value     = '';
+  document.getElementById('mp-lock-banner').style.display = 'none';
+  document.getElementById('mp-confirm-btn').disabled = false;
+  openModal('markpaid-modal');
+}
+
+async function confirmMarkPaid() {
+  const enrolId = document.getElementById('mp-enrol-id').value;
+  const monthNum = parseInt(document.getElementById('mp-month').value);
+  const lateFee  = parseFloat(document.getElementById('mp-latefee').value) || 0;
+  const notes    = document.getElementById('mp-notes').value.trim();
+  if (!enrolId || !monthNum) { showToast('Enter enrolment ID and month number.', 'error'); return; }
+
+  const btn = document.getElementById('mp-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Processing…';
+
+  try {
+    const res  = await fetch(API + '/api/gms-mark-paid', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ enrolmentId: enrolId, monthNum, lateFee, notes })
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = '✓ Mark as Paid';
+    if (data.success) {
+      closeModal('markpaid-modal');
+      showToast(data.message || 'Marked as paid!', 'ok');
+      loadEnrolments();
+      if (data.allDone) {
+        showToast('🎉 Scheme completed! Generate coupon from admin.', 'ok');
+      }
+      // Refresh detail if open
+      if (_currentEnrolId === enrolId) openDetail(enrolId);
+    } else {
+      showToast(data.message || 'Failed.', 'error');
+    }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = '✓ Mark as Paid';
+    showToast('Connection error.', 'error');
+  }
+}
+
+// ── Late Fee ──────────────────────────────────────────────
+function openLateFeeModal(enrolId) {
+  const month = prompt('Apply late fee — Month number:');
+  if (!month) return;
+  const amount = prompt('Late fee amount (₹):');
+  if (!amount) return;
+  const reason = prompt('Reason (optional):') || '';
+  applyLateFee(enrolId, parseInt(month), parseFloat(amount), reason);
+}
+
+async function applyLateFee(enrolId, monthNum, amount, reason) {
+  try {
+    const res  = await fetch(API + '/api/gms-apply-late-fee', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ enrolmentId: enrolId, monthNum, amount, reason })
+    });
+    const data = await res.json();
+    if (data.success) { showToast(data.message, 'ok'); openDetail(enrolId); }
+    else showToast(data.message || 'Failed.', 'error');
+  } catch(e) { showToast('Connection error.', 'error'); }
+}
+
+// ── Coupon (with customer OTP) ────────────────────────────
+function openCouponModal(enrolId, phone, amount) {
+  _couponOtpVerified = false;
+  document.getElementById('coupon-enrol-id').value = enrolId;
+  document.getElementById('coupon-phone').textContent = '+91 ' + phone;
+  document.getElementById('coupon-amount').value = fmtAmt(amount);
+  document.getElementById('coupon-otp-input').value = '';
+  document.getElementById('coupon-otp-hint').textContent = '';
+  document.getElementById('coupon-send-btn').textContent = 'Send OTP';
+  document.getElementById('coupon-send-btn').disabled = false;
+  document.getElementById('coupon-confirm-btn').disabled = true;
+  openModal('coupon-modal');
+}
+
+async function sendCouponOtp() {
+  const enrolId = document.getElementById('coupon-enrol-id').value;
+  const enrol = _allEnrolments.find(e => e.enrolment_id === enrolId);
+  if (!enrol) return;
+  const btn = document.getElementById('coupon-send-btn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const res  = await fetch(API + '/api/gms/send-otp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: enrol.phone })
+    });
+    const data = await res.json();
+    btn.textContent = 'Resend';
+    document.getElementById('coupon-otp-hint').textContent = data.success ? '✓ OTP sent to customer' : (data.message || 'Failed');
+    document.getElementById('coupon-otp-input').addEventListener('input', verifyCouponOtp);
+  } catch(e) { btn.disabled = false; btn.textContent = 'Send OTP'; }
+}
+
+async function verifyCouponOtp() {
+  const otp = document.getElementById('coupon-otp-input').value.trim();
+  if (otp.length !== 6) return;
+  const enrolId = document.getElementById('coupon-enrol-id').value;
+  const enrol = _allEnrolments.find(e => e.enrolment_id === enrolId);
+  if (!enrol) return;
+  try {
+    const res  = await fetch(API + '/api/gms/verify-otp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: enrol.phone, otp })
+    });
+    const data = await res.json();
+    if (data.success) {
+      _couponOtpVerified = true;
+      document.getElementById('coupon-otp-hint').textContent = '✓ Customer verified!';
+      document.getElementById('coupon-otp-hint').style.color = 'var(--green)';
+      document.getElementById('coupon-confirm-btn').disabled = false;
+    } else {
+      document.getElementById('coupon-otp-hint').textContent = data.message || 'Incorrect OTP.';
+      document.getElementById('coupon-otp-hint').style.color = 'var(--red)';
+    }
+  } catch(e) {}
+}
+
+async function confirmCoupon() {
+  if (!_couponOtpVerified) { showToast('Verify customer OTP first.', 'error'); return; }
+  const enrolId = document.getElementById('coupon-enrol-id').value;
+  const btn = document.getElementById('coupon-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  try {
+    const res  = await fetch(API + '/api/gms-generate-coupon', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ enrolmentId: enrolId })
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = 'Generate & Send Coupon';
+    if (data.success) {
+      closeModal('coupon-modal');
+      showToast('Coupon generated! SMS sent to customer.', 'ok');
+      loadEnrolments();
+      openDetail(enrolId);
+    } else {
+      showToast(data.message || 'Failed.', 'error');
+    }
+  } catch(e) { btn.disabled = false; btn.textContent = 'Generate & Send Coupon'; showToast('Error.', 'error'); }
+}
+
+// ── Reports ───────────────────────────────────────────────
+async function loadReports() {
+  try {
+    const res  = await fetch(API + '/api/gms-reports', { headers: { 'x-staff-token': _token } });
+    const data = await res.json();
+    if (!data.success) return;
+    const s = data.stats;
+    document.getElementById('r-paid').textContent  = fmtAmt(s.paidAmount);
+    document.getElementById('r-upi').textContent   = s.upi;
+    document.getElementById('r-store').textContent = s.store;
+    document.getElementById('r-soon2').textContent = s.maturingSoon;
+
+    // Branch summary from enrolments
+    if (_allEnrolments.length) renderBranchSummary();
+    else setTimeout(renderBranchSummary, 1500);
+  } catch(e) {}
+}
+
+function renderBranchSummary() {
+  const branches = ['Borivali', 'Vashi', 'Nalasopara', 'Vile Parle'];
+  const tbody = document.getElementById('branch-summary-body');
+  if (!_allEnrolments.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-soft)">No data.</td></tr>'; return; }
+  const rows = _role === 'admin' ? branches : [_branch];
+  tbody.innerHTML = rows.map(br => {
+    const be = _allEnrolments.filter(e => e.preferred_branch === br);
+    return `<tr>
+      <td><span class="badge badge-branch">${br}</span></td>
+      <td>${be.length}</td>
+      <td style="color:var(--green)">${be.filter(e=>e.status==='Active').length}</td>
+      <td style="color:var(--amber)">${be.filter(e=>e.status==='Matured').length}</td>
+      <td style="color:var(--blue)">${be.filter(e=>e.status==='Complete').length}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Users (Admin only) ────────────────────────────────────
+async function loadUsers() {
+  try {
+    const res  = await fetch(API + '/api/gms-users', { headers: { 'x-staff-token': _token } });
+    const data = await res.json();
+    const tbody = document.getElementById('users-tbl-body');
+    if (!data.success || !data.users) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-soft)">User management API not set up yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.users.map(u => `
+      <tr>
+        <td class="td-id">${u.username}</td>
+        <td><span class="badge badge-${u.role}">${u.role}</span></td>
+        <td>${u.branch||'All'}</td>
+        <td>${u.name}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="openChangePass('${u.username}')">Change Password</button>
+        </td>
+      </tr>`).join('');
+  } catch(e) {
+    document.getElementById('users-tbl-body').innerHTML =
+      '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-soft)">Add /api/gms-users route to see users.</td></tr>';
+  }
+}
+
+function openCreateUserModal() {
+  document.getElementById('um-username').value = '';
+  document.getElementById('um-name').value     = '';
+  document.getElementById('um-password').value = '';
+  document.getElementById('um-role').value     = 'branch';
+  document.getElementById('um-branch-fg').style.display = '';
+  openModal('user-modal');
+}
+
+function onRoleChange() {
+  const role = document.getElementById('um-role').value;
+  document.getElementById('um-branch-fg').style.display = role === 'admin' ? 'none' : '';
+}
+
+async function saveUser() {
+  const username = document.getElementById('um-username').value.trim();
+  const name     = document.getElementById('um-name').value.trim();
+  const password = document.getElementById('um-password').value;
+  const role     = document.getElementById('um-role').value;
+  const branch   = role === 'admin' ? null : document.getElementById('um-branch').value;
+  if (!username || !name || !password) { showToast('Fill all required fields.', 'error'); return; }
+  const btn = document.getElementById('um-save-btn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const res  = await fetch(API + '/api/gms-create-user', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ username, name, password, role, branch })
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = 'Create Account';
+    if (data.success) { closeModal('user-modal'); showToast('User created!', 'ok'); loadUsers(); }
+    else showToast(data.message || 'Failed.', 'error');
+  } catch(e) { btn.disabled = false; btn.textContent = 'Create Account'; showToast('Error.', 'error'); }
+}
+
+function openChangePass(username) {
+  document.getElementById('cp-username').value = username;
+  document.getElementById('cp-newpass').value  = '';
+  document.getElementById('cp-confirm').value  = '';
+  openModal('chpass-modal');
+}
+
+async function confirmChangePass() {
+  const username = document.getElementById('cp-username').value;
+  const newpass  = document.getElementById('cp-newpass').value;
+  const confirm  = document.getElementById('cp-confirm').value;
+  if (!newpass) { showToast('Enter new password.', 'error'); return; }
+  if (newpass !== confirm) { showToast('Passwords do not match.', 'error'); return; }
+  try {
+    const res  = await fetch(API + '/api/gms-change-password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ username, newPassword: newpass })
+    });
+    const data = await res.json();
+    if (data.success) { closeModal('chpass-modal'); showToast('Password changed!', 'ok'); }
+    else showToast(data.message || 'Failed.', 'error');
+  } catch(e) { showToast('Error.', 'error'); }
+}
+
+// ── Half Registrations ────────────────────────────────────
+async function loadHalfReg() {
+  try {
+    const res  = await fetch(API + '/api/gms-half-registrations', { headers: { 'x-staff-token': _token } });
+    const data = await res.json();
+    const tbody = document.getElementById('half-tbl-body');
+    if (!data.success || !data.rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-soft)">No incomplete registrations.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.rows.map(r => `<tr>
+      <td>+91 ${r.phone}</td>
+      <td>${r.name||'—'}</td>
+      <td>${r.branch||'—'}</td>
+      <td>${fmtAmt(r.instalment)}</td>
+      <td style="color:var(--amber)">${r.step_reached||'—'}</td>
+      <td class="td-muted">${fmtDate(r.created_at)}</td>
+    </tr>`).join('');
+  } catch(e) {}
+}
+
+// ── Audit Log ─────────────────────────────────────────────
+async function loadAuditLog() {
+  try {
+    const res  = await fetch(API + '/api/gms-audit-log', { headers: { 'x-staff-token': _token } });
+    const data = await res.json();
+    const el = document.getElementById('audit-list');
+    if (!data.success || !data.rows?.length) {
+      el.innerHTML = '<p style="color:var(--text-soft);text-align:center;padding:20px">No audit entries yet.</p>';
+      return;
+    }
+    el.innerHTML = data.rows.map(r => `
+      <div class="audit-row">
+        <div class="audit-dot"></div>
+        <div class="audit-content">
+          <div class="audit-action">${r.action} — <span style="color:var(--brand-deep);font-weight:600">${r.enrolment_id}</span></div>
+          <div class="audit-meta">By <strong>${r.done_by}</strong> @ ${r.branch||'—'} · ${fmtDate(r.created_at)} · ${r.details||''}</div>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    document.getElementById('audit-list').innerHTML = '<p style="color:var(--text-soft);text-align:center;padding:20px">Add /api/gms-audit-log route to see logs.</p>';
+  }
+}
+</script>
+</body>
+</html>
