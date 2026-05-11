@@ -6,7 +6,7 @@ const db                                      = require('../db');
 
 // SMS Template ID for app (change this later when you get new DLT template)
 const APP_TEMPLATE_ID = '1707163577173453876';
-const APP_OTP_MESSAGE = (otp) => `Dear User, Your WHP Jewellers website verification code is ${otp}`;
+const APP_OTP_MESSAGE = (otp) => `Dear user, your WHP Jewellers otp code is ${otp}`;
 
 module.exports = function(app, cache) {
 
