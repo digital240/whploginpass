@@ -6,6 +6,30 @@ const db               = require('../db');
 
 const APP_OTP_MESSAGE = (otp) => `Dear user, your WHP Jewellers otp code is ${otp}`;
 
+// ── Tag customer with whp-app in Shopify ─────────────────
+async function tagShopifyCustomer(shopify_id) {
+  if (!shopify_id) return;
+  try {
+    const shop  = process.env.SHOPIFY_SHOP_DOMAIN;
+    const token = process.env.SHOPIFY_ACCESS_TOKEN;
+    const r = await axios.get(
+      `https://${shop}/admin/api/2025-01/customers/${shopify_id}.json`,
+      { headers: { 'X-Shopify-Access-Token': token } }
+    );
+    const existingTags = r.data.customer?.tags || '';
+    if (existingTags.includes('whp-app')) return; // already tagged
+    const newTags = existingTags ? `${existingTags},whp-app` : 'whp-app';
+    await axios.put(
+      `https://${shop}/admin/api/2025-01/customers/${shopify_id}.json`,
+      { customer: { id: shopify_id, tags: newTags }},
+      { headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' }}
+    );
+    console.log(`[APP] Tagged customer ${shopify_id} with whp-app`);
+  } catch(e) {
+    console.error('[APP] Tag customer failed:', e.message);
+  }
+}
+
 // ── Shopify customer lookup by phone ─────────────────────
 async function findShopifyCustomer(mobile) {
   try {
@@ -24,7 +48,6 @@ async function findShopifyCustomer(mobile) {
     };
   } catch (e) {
     console.error('[APP] Shopify lookup failed:', e.message);
-    console.error('[APP] Response:', e.response?.status, JSON.stringify(e.response?.data));
     return null;
   }
 }
@@ -81,29 +104,28 @@ module.exports = function(app, cache) {
       // Check app_customers
       const [rows] = await db.query('SELECT * FROM app_customers WHERE mobile=?', [mobile]);
 
-      // Tag customer with whp-app in Shopify
-if (customer.shopify_id) {
-  try {
-    // Get existing tags first
-    const shopRes = await axios.get(
-      `https://${process.env.SHOPIFY_SHOP_DOMAIN}/admin/api/2025-01/customers/${customer.shopify_id}.json`,
-      { headers: { 'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN } }
-    );
-    const existingTags = shopRes.data.customer?.tags || '';
-    if (!existingTags.includes('whp-app')) {
-      await axios.put(
-        `https://${process.env.SHOPIFY_SHOP_DOMAIN}/admin/api/2025-01/customers/${customer.shopify_id}.json`,
-        { customer: { id: customer.shopify_id, tags: existingTags ? `${existingTags},whp-app` : 'whp-app' }},
-        { headers: { 'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN, 'Content-Type': 'application/json' }}
-      );
-    }
-  } catch(e) { console.error('[APP] Tag customer failed:', e.message); }
-}
+      if (rows.length) {
+        // Existing app customer — login + tag
+        const customer = rows[0];
+        const token    = require('crypto').randomBytes(32).toString('hex');
+        await db.query(
+          `INSERT INTO app_sessions (customer_id, mobile, token, expires_at)
+           VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))`,
+          [customer.id, mobile, token]
+        );
+        // Tag in Shopify
+        tagShopifyCustomer(customer.shopify_id);
+        return res.json({
+          success: true, verified: true, needsRegistration: false, token,
+          customer: { id: customer.id, mobile: customer.mobile, name: customer.name || null, email: customer.email || null, photo: customer.photo || null, shopify_id: customer.shopify_id || null },
+        });
+      }
 
       // Not in app_customers — check Shopify
       const shopifyCustomer = await findShopifyCustomer(mobile);
 
       if (shopifyCustomer) {
+        // Found in Shopify — auto create + tag
         const [result] = await db.query(
           `INSERT INTO app_customers (mobile, name, email, shopify_id, created_at) VALUES (?, ?, ?, ?, NOW())`,
           [mobile, shopifyCustomer.name, shopifyCustomer.email, shopifyCustomer.shopify_id]
@@ -113,12 +135,15 @@ if (customer.shopify_id) {
           `INSERT INTO app_sessions (customer_id, mobile, token, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))`,
           [result.insertId, mobile, token]
         );
+        // Tag in Shopify
+        tagShopifyCustomer(shopifyCustomer.shopify_id);
         return res.json({
           success: true, verified: true, needsRegistration: false, token,
           customer: { id: result.insertId, mobile, name: shopifyCustomer.name, email: shopifyCustomer.email, photo: null, shopify_id: shopifyCustomer.shopify_id },
         });
       }
 
+      // Brand new customer
       return res.json({ success: true, verified: true, needsRegistration: true, phone: mobile });
 
     } catch (err) {
@@ -144,7 +169,7 @@ if (customer.shopify_id) {
       if (existing.length)
         return res.status(400).json({ success: false, message: 'Mobile already registered.' });
 
-      // Create in Shopify
+      // Create in Shopify with whp-app tag
       let shopify_id = null;
       try {
         const shop      = process.env.SHOPIFY_SHOP_DOMAIN;
@@ -152,7 +177,7 @@ if (customer.shopify_id) {
         const nameParts = name.trim().split(' ');
         const shopRes   = await axios.post(
           `https://${shop}/admin/api/2025-01/customers.json`,
-          { customer: { first_name: nameParts[0], last_name: nameParts.slice(1).join(' ') || '', email: email || undefined, phone: `+91${mobile}` }},
+          { customer: { first_name: nameParts[0], last_name: nameParts.slice(1).join(' ') || '', email: email || undefined, phone: `+91${mobile}`, tags: 'whp-app' }},
           { headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' } }
         );
         shopify_id = String(shopRes.data.customer?.id);
@@ -177,6 +202,107 @@ if (customer.shopify_id) {
     } catch (err) {
       console.error('[APP register]', err.message);
       return res.status(500).json({ success: false, message: 'Registration failed.' });
+    }
+  });
+
+  // ── GET /api/app/orders ──────────────────────────────
+  app.get('/api/app/orders', async (req, res) => {
+    try {
+      const token = req.headers['x-app-token'];
+      if (!token) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const [sessions] = await db.query(
+        `SELECT c.shopify_id FROM app_customers c
+         JOIN app_sessions s ON s.customer_id = c.id
+         WHERE s.token=? AND s.expires_at > NOW()`, [token]
+      );
+      if (!sessions.length) return res.status(401).json({ success: false, message: 'Session expired.' });
+
+      const shopify_id = sessions[0].shopify_id;
+      if (!shopify_id) return res.json({ success: true, orders: [] });
+
+      const shop   = process.env.SHOPIFY_SHOP_DOMAIN;
+      const stoken = process.env.SHOPIFY_ACCESS_TOKEN;
+      const r = await axios.get(
+        `https://${shop}/admin/api/2025-01/customers/${shopify_id}/orders.json?status=any&limit=20`,
+        { headers: { 'X-Shopify-Access-Token': stoken } }
+      );
+
+      const orders = (r.data.orders || []).map(o => ({
+        id:          o.id,
+        orderNumber: o.order_number,
+        processedAt: o.created_at,
+        status:      o.fulfillment_status || 'unfulfilled',
+        totalPrice:  o.total_price,
+        source:      o.tags?.includes('source-app') ? 'app' : 'web',
+        lineItems:   (o.line_items || []).map(i => ({ title: i.title, quantity: i.quantity, price: i.price })),
+      }));
+
+      return res.json({ success: true, orders });
+    } catch (err) {
+      console.error('[APP orders]', err.message);
+      return res.status(500).json({ success: false, message: 'Failed to fetch orders.' });
+    }
+  });
+
+  // ── GET /api/app/addresses ───────────────────────────
+  app.get('/api/app/addresses', async (req, res) => {
+    try {
+      const token = req.headers['x-app-token'];
+      if (!token) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const [sessions] = await db.query(
+        `SELECT c.shopify_id FROM app_customers c
+         JOIN app_sessions s ON s.customer_id = c.id
+         WHERE s.token=? AND s.expires_at > NOW()`, [token]
+      );
+      if (!sessions.length) return res.status(401).json({ success: false, message: 'Session expired.' });
+
+      const shopify_id = sessions[0].shopify_id;
+      if (!shopify_id) return res.json({ success: true, addresses: [] });
+
+      const shop   = process.env.SHOPIFY_SHOP_DOMAIN;
+      const stoken = process.env.SHOPIFY_ACCESS_TOKEN;
+      const r = await axios.get(
+        `https://${shop}/admin/api/2025-01/customers/${shopify_id}/addresses.json`,
+        { headers: { 'X-Shopify-Access-Token': stoken } }
+      );
+
+      return res.json({ success: true, addresses: r.data.addresses || [] });
+    } catch (err) {
+      console.error('[APP addresses]', err.message);
+      return res.status(500).json({ success: false, message: 'Failed to fetch addresses.' });
+    }
+  });
+
+  // ── POST /api/app/addresses ──────────────────────────
+  app.post('/api/app/addresses', async (req, res) => {
+    try {
+      const token = req.headers['x-app-token'];
+      if (!token) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const [sessions] = await db.query(
+        `SELECT c.shopify_id FROM app_customers c
+         JOIN app_sessions s ON s.customer_id = c.id
+         WHERE s.token=? AND s.expires_at > NOW()`, [token]
+      );
+      if (!sessions.length) return res.status(401).json({ success: false, message: 'Session expired.' });
+
+      const shopify_id = sessions[0].shopify_id;
+      const { first_name, last_name, address1, address2, city, province, zip, country, phone } = req.body;
+
+      const shop   = process.env.SHOPIFY_SHOP_DOMAIN;
+      const stoken = process.env.SHOPIFY_ACCESS_TOKEN;
+      const r = await axios.post(
+        `https://${shop}/admin/api/2025-01/customers/${shopify_id}/addresses.json`,
+        { address: { first_name, last_name, address1, address2, city, province, zip: zip || '', country: country || 'India', phone } },
+        { headers: { 'X-Shopify-Access-Token': stoken, 'Content-Type': 'application/json' } }
+      );
+
+      return res.json({ success: true, address: r.data.customer_address });
+    } catch (err) {
+      console.error('[APP add-address]', err.message);
+      return res.status(500).json({ success: false, message: 'Failed to add address.' });
     }
   });
 
