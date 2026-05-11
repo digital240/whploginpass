@@ -81,19 +81,24 @@ module.exports = function(app, cache) {
       // Check app_customers
       const [rows] = await db.query('SELECT * FROM app_customers WHERE mobile=?', [mobile]);
 
-      if (rows.length) {
-        const customer = rows[0];
-        const token    = require('crypto').randomBytes(32).toString('hex');
-        await db.query(
-          `INSERT INTO app_sessions (customer_id, mobile, token, expires_at)
-           VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))`,
-          [customer.id, mobile, token]
-        );
-        return res.json({
-          success: true, verified: true, needsRegistration: false, token,
-          customer: { id: customer.id, mobile: customer.mobile, name: customer.name || null, email: customer.email || null, photo: customer.photo || null, shopify_id: customer.shopify_id || null },
-        });
-      }
+      // Tag customer with whp-app in Shopify
+if (customer.shopify_id) {
+  try {
+    // Get existing tags first
+    const shopRes = await axios.get(
+      `https://${process.env.SHOPIFY_SHOP_DOMAIN}/admin/api/2025-01/customers/${customer.shopify_id}.json`,
+      { headers: { 'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN } }
+    );
+    const existingTags = shopRes.data.customer?.tags || '';
+    if (!existingTags.includes('whp-app')) {
+      await axios.put(
+        `https://${process.env.SHOPIFY_SHOP_DOMAIN}/admin/api/2025-01/customers/${customer.shopify_id}.json`,
+        { customer: { id: customer.shopify_id, tags: existingTags ? `${existingTags},whp-app` : 'whp-app' }},
+        { headers: { 'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN, 'Content-Type': 'application/json' }}
+      );
+    }
+  } catch(e) { console.error('[APP] Tag customer failed:', e.message); }
+}
 
       // Not in app_customers — check Shopify
       const shopifyCustomer = await findShopifyCustomer(mobile);
