@@ -18,7 +18,7 @@ db.query('SELECT 1')
 app.use(function(req, res, next) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-shop-domain, x-user-token, x-staff-token');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-shop-domain, x-user-token, x-staff-token, x-app-token');
   if (req.method === 'OPTIONS') return res.status(200).end();
   next();
 });
@@ -47,7 +47,7 @@ require('./routes/coupons')(app);
 require('./routes/reports')(app);
 require('./routes/user-auth')(app, cache);
 require('./routes/user-profile')(app, cache);
-
+require('./routes/app-auth')(app, cache);
 // ── Legacy WLP routes (keep working) ────────────────────
 // These are the original Shopify OTP login routes — do not remove
 require('./wlp-routes')(app, cache);   // rename your old server.js non-GMS routes to this file
