@@ -12,7 +12,7 @@ async function findShopifyCustomer(mobile) {
     const shop  = process.env.SHOPIFY_SHOP;
     const token = process.env.SHOPIFY_ADMIN_TOKEN;
     const res   = await axios.get(
-      `https://${shop}.myshopify.com/admin/api/2025-01/customers/search.json?query=phone:+91${mobile}&limit=1`,
+      `https://${shop}.myshopify.com/admin/api/2025-01/customers/search.json?query=phone%3A%2B91${mobile}&limit=1`,
       { headers: { 'X-Shopify-Access-Token': token }, timeout: 8000 }
     );
     const c = res.data.customers?.[0];
