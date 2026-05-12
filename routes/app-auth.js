@@ -52,6 +52,19 @@ async function findShopifyCustomer(mobile) {
   }
 }
 
+async function getGmsToken(mobile) {
+  try {
+    const [rows] = await db.query('SELECT * FROM gms_users WHERE mobile=?', [mobile]);
+    if (!rows.length) return null;
+    const { createUserSession } = require('../helpers/auth');
+    const userToken = await createUserSession(rows[0].user_id);
+    return { userToken, gmsUser: { user_id: rows[0].user_id, first_name: rows[0].first_name, last_name: rows[0].last_name, email: rows[0].email } };
+  } catch(e) {
+    console.error('[APP] GMS token failed:', e.message);
+    return null;
+  }
+}
+
 module.exports = function(app, cache) {
 
   // ── POST /api/app/send-otp ───────────────────────────
