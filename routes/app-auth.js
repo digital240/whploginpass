@@ -17,7 +17,7 @@ async function tagShopifyCustomer(shopify_id) {
       { headers: { 'X-Shopify-Access-Token': token } }
     );
     const existingTags = r.data.customer?.tags || '';
-    if (existingTags.includes('whp-app')) return; // already tagged
+    if (existingTags.includes('whp-app')) return;
     const newTags = existingTags ? `${existingTags},whp-app` : 'whp-app';
     await axios.put(
       `https://${shop}/admin/api/2025-01/customers/${shopify_id}.json`,
@@ -52,26 +52,38 @@ async function findShopifyCustomer(mobile) {
   }
 }
 
+// ── Get GMS token for mobile ──────────────────────────────
 async function getGmsToken(mobile) {
   try {
     const [users] = await db.query('SELECT * FROM gms_users WHERE mobile=?', [mobile]);
     if (!users.length) return null;
     const user = users[0];
+
+    // Fetch latest valid existing session
     const [sessions] = await db.query(
       'SELECT token FROM gms_user_sessions WHERE user_id=? AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1',
       [user.user_id]
     );
     if (!sessions.length) return null;
 
-    // ADD THIS LINE:
-    console.log('[GMS] token length:', sessions[0].token.length, '| token:', sessions[0].token);
+    const userToken = sessions[0].token;
+    console.log('[GMS] token length:', userToken.length, '| starts:', userToken.substring(0, 10));
 
     return {
-      userToken: sessions[0].token,
-      ...
+      userToken,
+      gmsUser: {
+        user_id:    user.user_id,
+        first_name: user.first_name,
+        last_name:  user.last_name,
+        email:      user.email,
+      }
     };
+  } catch(e) {
+    console.error('[APP] GMS token failed:', e.message);
+    return null;
   }
 }
+
 module.exports = function(app, cache) {
 
   // ── POST /api/app/send-otp ───────────────────────────
@@ -125,7 +137,6 @@ module.exports = function(app, cache) {
       const [rows] = await db.query('SELECT * FROM app_customers WHERE mobile=?', [mobile]);
 
       if (rows.length) {
-        // Existing app customer — login + tag
         const customer = rows[0];
         const token    = require('crypto').randomBytes(32).toString('hex');
         await db.query(
@@ -133,22 +144,27 @@ module.exports = function(app, cache) {
            VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))`,
           [customer.id, mobile, token]
         );
-        // Tag in Shopify
-      tagShopifyCustomer(customer.shopify_id);
-const gmsData1 = await getGmsToken(mobile);
-return res.json({
-  success: true, verified: true, needsRegistration: false, token,
-  gmsToken: gmsData1?.userToken || null,
-  gmsUser:  gmsData1?.gmsUser  || null,
-  customer: { id: customer.id, mobile: customer.mobile, name: customer.name || null, email: customer.email || null, photo: customer.photo || null, shopify_id: customer.shopify_id || null },
-});
+        tagShopifyCustomer(customer.shopify_id);
+        const gmsData = await getGmsToken(mobile);
+        return res.json({
+          success: true, verified: true, needsRegistration: false, token,
+          gmsToken: gmsData?.userToken || null,
+          gmsUser:  gmsData?.gmsUser   || null,
+          customer: {
+            id:         customer.id,
+            mobile:     customer.mobile,
+            name:       customer.name       || null,
+            email:      customer.email      || null,
+            photo:      customer.photo      || null,
+            shopify_id: customer.shopify_id || null,
+          },
+        });
       }
 
       // Not in app_customers — check Shopify
       const shopifyCustomer = await findShopifyCustomer(mobile);
 
       if (shopifyCustomer) {
-        // Found in Shopify — auto create + tag
         const [result] = await db.query(
           `INSERT INTO app_customers (mobile, name, email, shopify_id, created_at) VALUES (?, ?, ?, ?, NOW())`,
           [mobile, shopifyCustomer.name, shopifyCustomer.email, shopifyCustomer.shopify_id]
@@ -158,15 +174,21 @@ return res.json({
           `INSERT INTO app_sessions (customer_id, mobile, token, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))`,
           [result.insertId, mobile, token]
         );
-        // Tag in Shopify
-       tagShopifyCustomer(shopifyCustomer.shopify_id);
-const gmsData2 = await getGmsToken(mobile);
-return res.json({
-  success: true, verified: true, needsRegistration: false, token,
-  gmsToken: gmsData2?.userToken || null,
-  gmsUser:  gmsData2?.gmsUser  || null,
-  customer: { id: result.insertId, mobile, name: shopifyCustomer.name, email: shopifyCustomer.email, photo: null, shopify_id: shopifyCustomer.shopify_id },
-});
+        tagShopifyCustomer(shopifyCustomer.shopify_id);
+        const gmsData = await getGmsToken(mobile);
+        return res.json({
+          success: true, verified: true, needsRegistration: false, token,
+          gmsToken: gmsData?.userToken || null,
+          gmsUser:  gmsData?.gmsUser   || null,
+          customer: {
+            id:         result.insertId,
+            mobile,
+            name:       shopifyCustomer.name,
+            email:      shopifyCustomer.email,
+            photo:      null,
+            shopify_id: shopifyCustomer.shopify_id,
+          },
+        });
       }
 
       // Brand new customer
@@ -195,7 +217,6 @@ return res.json({
       if (existing.length)
         return res.status(400).json({ success: false, message: 'Mobile already registered.' });
 
-      // Create in Shopify with whp-app tag
       let shopify_id = null;
       try {
         const shop      = process.env.SHOPIFY_SHOP_DOMAIN;
@@ -342,7 +363,17 @@ return res.json({
         [token]
       );
       if (!rows.length) return res.json({ loggedIn: false });
-      return res.json({ loggedIn: true, customer: { id: rows[0].id, mobile: rows[0].mobile, name: rows[0].name || null, email: rows[0].email || null, photo: rows[0].photo || null, shopify_id: rows[0].shopify_id || null } });
+      return res.json({
+        loggedIn: true,
+        customer: {
+          id:         rows[0].id,
+          mobile:     rows[0].mobile,
+          name:       rows[0].name       || null,
+          email:      rows[0].email      || null,
+          photo:      rows[0].photo      || null,
+          shopify_id: rows[0].shopify_id || null,
+        }
+      });
     } catch (err) {
       return res.json({ loggedIn: false });
     }
@@ -360,6 +391,4 @@ return res.json({
   });
 
   console.log('[APP] Auth routes loaded');
-  console.log('[DEBUG] SHOP:', process.env.SHOPIFY_SHOP_DOMAIN);
-console.log('[DEBUG] TOKEN starts:', process.env.SHOPIFY_ACCESS_TOKEN?.substring(0, 10));
 };
