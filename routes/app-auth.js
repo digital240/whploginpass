@@ -353,4 +353,6 @@ return res.json({
   });
 
   console.log('[APP] Auth routes loaded');
+  console.log('[DEBUG] SHOP:', process.env.SHOPIFY_SHOP_DOMAIN);
+console.log('[DEBUG] TOKEN starts:', process.env.SHOPIFY_ACCESS_TOKEN?.substring(0, 10));
 };
