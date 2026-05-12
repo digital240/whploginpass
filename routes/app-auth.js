@@ -392,3 +392,30 @@ module.exports = function(app, cache) {
 
   console.log('[APP] Auth routes loaded');
 };
+
+// NOTE: Add this route inside the module.exports = function(app, cache) { ... } block
+// Place it before the closing }; of the module
+
+/*
+  // ── GET /api/app/refresh-gms-token ──────────────────
+  app.get('/api/app/refresh-gms-token', async (req, res) => {
+    try {
+      const token = req.headers['x-app-token'];
+      if (!token) return res.json({ success: false });
+
+      const [sessions] = await db.query(
+        `SELECT c.mobile FROM app_customers c
+         JOIN app_sessions s ON s.customer_id = c.id
+         WHERE s.token=? AND s.expires_at > NOW()`, [token]
+      );
+      if (!sessions.length) return res.json({ success: false });
+
+      const gmsData = await getGmsToken(sessions[0].mobile);
+      if (!gmsData) return res.json({ success: false });
+
+      return res.json({ success: true, gmsToken: gmsData.userToken, gmsUser: gmsData.gmsUser });
+    } catch (err) {
+      return res.json({ success: false });
+    }
+  });
+*/
