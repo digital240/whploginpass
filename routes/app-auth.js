@@ -64,7 +64,8 @@ async function getGmsToken(mobile) {
     return null;
   }
 }
-
+console.log('[DEBUG] SHOP:', process.env.SHOPIFY_SHOP_DOMAIN);
+console.log('[DEBUG] TOKEN:', process.env.SHOPIFY_ACCESS_TOKEN?.substring(0, 15));
 module.exports = function(app, cache) {
 
   // ── POST /api/app/send-otp ───────────────────────────
