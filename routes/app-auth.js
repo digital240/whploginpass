@@ -52,36 +52,26 @@ async function findShopifyCustomer(mobile) {
   }
 }
 
-// REPLACE the entire getGmsToken function in routes/app-auth.js with this:
-
 async function getGmsToken(mobile) {
   try {
     const [users] = await db.query('SELECT * FROM gms_users WHERE mobile=?', [mobile]);
     if (!users.length) return null;
     const user = users[0];
-
-    // Fetch latest valid existing session — never create a new one
     const [sessions] = await db.query(
       'SELECT token FROM gms_user_sessions WHERE user_id=? AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1',
       [user.user_id]
     );
     if (!sessions.length) return null;
 
+    // ADD THIS LINE:
+    console.log('[GMS] token length:', sessions[0].token.length, '| token:', sessions[0].token);
+
     return {
       userToken: sessions[0].token,
-      gmsUser: {
-        user_id:    user.user_id,
-        first_name: user.first_name,
-        last_name:  user.last_name,
-        email:      user.email,
-      }
+      ...
     };
-  } catch(e) {
-    console.error('[APP] GMS token failed:', e.message);
-    return null;
   }
 }
- 
 module.exports = function(app, cache) {
 
   // ── POST /api/app/send-otp ───────────────────────────
