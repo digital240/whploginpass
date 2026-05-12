@@ -127,11 +127,14 @@ module.exports = function(app, cache) {
           [customer.id, mobile, token]
         );
         // Tag in Shopify
-        tagShopifyCustomer(customer.shopify_id);
-        return res.json({
-          success: true, verified: true, needsRegistration: false, token,
-          customer: { id: customer.id, mobile: customer.mobile, name: customer.name || null, email: customer.email || null, photo: customer.photo || null, shopify_id: customer.shopify_id || null },
-        });
+      tagShopifyCustomer(customer.shopify_id);
+const gmsData1 = await getGmsToken(mobile);
+return res.json({
+  success: true, verified: true, needsRegistration: false, token,
+  gmsToken: gmsData1?.userToken || null,
+  gmsUser:  gmsData1?.gmsUser  || null,
+  customer: { id: customer.id, mobile: customer.mobile, name: customer.name || null, email: customer.email || null, photo: customer.photo || null, shopify_id: customer.shopify_id || null },
+});
       }
 
       // Not in app_customers — check Shopify
@@ -149,11 +152,14 @@ module.exports = function(app, cache) {
           [result.insertId, mobile, token]
         );
         // Tag in Shopify
-        tagShopifyCustomer(shopifyCustomer.shopify_id);
-        return res.json({
-          success: true, verified: true, needsRegistration: false, token,
-          customer: { id: result.insertId, mobile, name: shopifyCustomer.name, email: shopifyCustomer.email, photo: null, shopify_id: shopifyCustomer.shopify_id },
-        });
+       tagShopifyCustomer(shopifyCustomer.shopify_id);
+const gmsData2 = await getGmsToken(mobile);
+return res.json({
+  success: true, verified: true, needsRegistration: false, token,
+  gmsToken: gmsData2?.userToken || null,
+  gmsUser:  gmsData2?.gmsUser  || null,
+  customer: { id: result.insertId, mobile, name: shopifyCustomer.name, email: shopifyCustomer.email, photo: null, shopify_id: shopifyCustomer.shopify_id },
+});
       }
 
       // Brand new customer
