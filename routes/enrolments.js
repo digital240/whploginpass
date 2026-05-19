@@ -33,10 +33,42 @@ module.exports = function(app, cache) {
         return res.status(401).json({ success: false, message: 'Mobile not verified.' });
       }
 
+      const today = new Date().toISOString().split('T')[0];
+      const mDate = toMysqlDate(maturity_date, tenure);
+
+      // ── For UPI: check if draft already exists for this phone ──
+      if (pay === 'upi') {
+        const [existing] = await db.query(
+          `SELECT enrolment_id, razorpay_subscription_id FROM gms_enrolments 
+           WHERE phone=? AND status='Draft' AND pay_method='UPI Auto-debit'
+           ORDER BY created_at DESC LIMIT 1`,
+          [cp]
+        );
+        if (existing.length && existing[0].razorpay_subscription_id) {
+          // Reuse existing draft + subscription
+          console.log(`[GMS] Reusing draft: ${existing[0].enrolment_id}`);
+          try {
+            const Razorpay = require('razorpay');
+            const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+            const sub = await rzp.subscriptions.fetch(existing[0].razorpay_subscription_id);
+            return res.json({
+              success:      true,
+              enrolmentId:  existing[0].enrolment_id,
+              message:      'Resuming your enrolment…',
+              razorpay:     { shortUrl: sub.short_url, subscriptionId: sub.id }
+            });
+          } catch(e) {
+            // If fetch fails, delete old draft and create new
+            await db.query("DELETE FROM gms_enrolments WHERE enrolment_id=?", [existing[0].enrolment_id]);
+          }
+        }
+      }
+
       const enrolmentId = genId();
-      const today       = new Date().toISOString().split('T')[0];
-      const mDate       = toMysqlDate(maturity_date, tenure);
-      console.log(`[GMS] maturity_date received: "${maturity_date}" → saved: "${mDate}"`);
+
+      // For UPI → save as Draft first, convert to Active after payment
+      // For Store → save as Active immediately
+      const initialStatus = pay === 'upi' ? 'Draft' : 'Active';
 
       await db.query(`
         INSERT INTO gms_enrolments (
@@ -44,16 +76,15 @@ module.exports = function(app, cache) {
           dob, identity_proof, preferred_branch, product_title, product_sku, product_url,
           redeem_type, bonus_pct, instalment_amt, tenure_months, pay_months,
           total_contribution, whp_bonus, total_redeemable,
-          maturity_date, enrolment_date, pay_method, payments_pending
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          maturity_date, enrolment_date, pay_method, payments_pending, status
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [enrolmentId, name, cp, email||'', address1||'', address2||'', city||'', state||'', pincode||'',
          dob||null, identity||'', branch||'', product_title||'', product_sku||'', product_url||'',
          type, pct, amt, tenure, paymo, paid, bonus, redeem,
-         mDate, today, pay==='upi'?'UPI Auto-debit':'Pay at Store', paymo]
+         mDate, today, pay==='upi'?'UPI Auto-debit':'Pay at Store', paymo, initialStatus]
       );
 
       await createPaymentSchedule(enrolmentId, amt, paymo, today);
-
       await db.query('UPDATE gms_half_registrations SET converted=1 WHERE phone=? AND converted=0', [cp]);
 
       // Sync address to user profile if logged in
@@ -74,105 +105,117 @@ module.exports = function(app, cache) {
         } catch(e) { console.log('[GMS] Address sync error:', e.message); }
       }
 
-      await db.query(
-        'INSERT INTO gms_notifications (enrolment_id, phone, type, message, status) VALUES (?,?,?,?,?)',
-        [enrolmentId, cp, 'Enrolment', `Enrolled. Monthly: Rs.${amt}. Tenure: ${tenure}mo. Maturity: ${mDate}`, 'Sent']
-      );
+      // ── Store payment → send SMS immediately ──
+      if (pay !== 'upi') {
+        await db.query(
+          'INSERT INTO gms_notifications (enrolment_id, phone, type, message, status) VALUES (?,?,?,?,?)',
+          [enrolmentId, cp, 'Enrolment', `Enrolled. Monthly: Rs.${amt}. Tenure: ${tenure}mo. Maturity: ${mDate}`, 'Sent']
+        );
+        await sendSms(cp,
+          `Dear Customer, you have successfully enrolled in WHP Golden Moments Scheme. Enrolment ID: ${enrolmentId}. Monthly: Rs.${amt} x ${paymo} months. Maturity: ${mDate}. - WHP Jewellers`
+        );
+        cache.del(`otp:${cp}`);
+        return res.json({ success: true, enrolmentId, message: 'Enrolment successful!', razorpay: null });
+      }
 
-      await sendSms(cp,
-        `Dear Customer, you have successfully enrolled in WHP Golden Moments Scheme. Enrolment ID: ${enrolmentId}. Monthly: Rs.${amt} x ${paymo} months. Maturity: ${mDate}. - WHP Jewellers`
-      );
-
-      cache.del(`otp:${cp}`);
-
-      // ── If UPI selected → create Razorpay subscription ──
+      // ── UPI payment → create Razorpay subscription ──
       let razorpayShortUrl = null;
       let razorpaySubId    = null;
 
-      if (pay === 'upi') {
+      try {
+        const Razorpay = require('razorpay');
+        const rzp = new Razorpay({
+          key_id:     process.env.RAZORPAY_KEY_ID,
+          key_secret: process.env.RAZORPAY_KEY_SECRET
+        });
+
+        const amountPaise = Math.round(parseFloat(amt) * 100);
+        const startAt     = Math.floor(Date.now() / 1000) + 60;
+
+        // Create Razorpay customer to pre-fill contact details
+        let razorpayCustomerId = null;
         try {
-          const Razorpay = require('razorpay');
-          const rzp = new Razorpay({
-            key_id:     process.env.RAZORPAY_KEY_ID,
-            key_secret: process.env.RAZORPAY_KEY_SECRET
+          const custRes = await rzp.customers.create({
+            name:          name,
+            email:         email || `${cp}@whpjewellers.com`,
+            contact:       `+91${cp}`,
+            fail_existing: 0
           });
-
-          const amountPaise = Math.round(parseFloat(amt) * 100);
-          const startAt     = Math.floor(Date.now() / 1000) + 60;
-
-          const plan = await rzp.plans.create({
-            period: 'monthly', interval: 1,
-            item: {
-              name:        `WHP GMS - ${enrolmentId}`,
-              amount:      amountPaise,
-              currency:    'INR',
-              description: `WHP Golden Moments Scheme - ${tenure} months`
-            }
-          });
-
-          // Create or find Razorpay customer first
-          let razorpayCustomerId = null;
-          try {
-            const custRes = await rzp.customers.create({
-              name:    name,
-              email:   email || `${cp}@whpjewellers.com`,
-              contact: `+91${cp}`,
-              fail_existing: 0 // don't fail if customer exists
-            });
-            razorpayCustomerId = custRes.id;
-          } catch(ce) {
-            console.log('[GMS] Razorpay customer create:', ce.message);
-          }
-
-          const subOptions = {
-            plan_id:         plan.id,
-            total_count:     parseInt(paymo),
-            quantity:        1,
-            start_at:        startAt,
-            customer_notify: 1,
-            notes: {
-              enrolment_id:   enrolmentId,
-              customer_phone: cp,
-              scheme:         `${tenure} Month GMS`
-            }
-          };
-
-          // Pre-fill customer so Razorpay doesn't ask again
-          if (razorpayCustomerId) {
-            subOptions.customer_id = razorpayCustomerId;
-          }
-
-          const subscription = await rzp.subscriptions.create(subOptions);
-
-          razorpayShortUrl = subscription.short_url;
-          razorpaySubId    = subscription.id;
-
-          await db.query(
-            `UPDATE gms_enrolments 
-             SET razorpay_plan_id=?, razorpay_subscription_id=?, razorpay_sub_status='created'
-             WHERE enrolment_id=?`,
-            [plan.id, subscription.id, enrolmentId]
-          );
-
-          console.log(`[GMS] Razorpay subscription: ${subscription.id} for ${enrolmentId}`);
-
-          // Send mandate SMS as backup
-          await sendSms(cp,
-            `Dear Customer, please approve your WHP GMS UPI mandate: ${subscription.short_url} - WHP Jewellers`
-          );
-
-        } catch(rzpErr) {
-          console.error('[GMS] Razorpay error:', rzpErr.message);
-          // Enrolment still saved even if Razorpay fails
+          razorpayCustomerId = custRes.id;
+          console.log(`[GMS] Razorpay customer: ${razorpayCustomerId}`);
+        } catch(ce) {
+          console.log('[GMS] Customer create note:', ce.message);
         }
+
+        // Create plan
+        const plan = await rzp.plans.create({
+          period: 'monthly', interval: 1,
+          item: {
+            name:        `WHP GMS - ${enrolmentId}`,
+            amount:      amountPaise,
+            currency:    'INR',
+            description: `WHP Golden Moments Scheme - ${tenure} months`
+          }
+        });
+
+        // Create subscription with customer pre-filled
+        const subOptions = {
+          plan_id:         plan.id,
+          total_count:     parseInt(paymo),
+          quantity:        1,
+          start_at:        startAt,
+          customer_notify: 1,
+          notes: {
+            enrolment_id:   enrolmentId,
+            customer_phone: cp,
+            customer_name:  name,
+            scheme:         `${tenure} Month GMS`
+          }
+        };
+        if (razorpayCustomerId) subOptions.customer_id = razorpayCustomerId;
+
+        const subscription = await rzp.subscriptions.create(subOptions);
+        razorpayShortUrl   = subscription.short_url;
+        razorpaySubId      = subscription.id;
+
+        // Save plan + subscription IDs
+        await db.query(
+          `UPDATE gms_enrolments 
+           SET razorpay_plan_id=?, razorpay_subscription_id=?, razorpay_sub_status='created'
+           WHERE enrolment_id=?`,
+          [plan.id, subscription.id, enrolmentId]
+        );
+
+        console.log(`[GMS] Subscription created: ${subscription.id} for ${enrolmentId}`);
+
+        // Send mandate link via SMS as backup
+        await sendSms(cp,
+          `Dear Customer, complete your WHP GMS enrolment by approving the UPI mandate: ${subscription.short_url} - WHP Jewellers`
+        );
+
+      } catch(rzpErr) {
+        console.error('[GMS] Razorpay error:', rzpErr.message);
+        // Razorpay failed — convert to store payment so enrolment is not lost
+        await db.query(
+          `UPDATE gms_enrolments SET status='Active', pay_method='Pay at Store' WHERE enrolment_id=?`,
+          [enrolmentId]
+        );
+        await sendSms(cp,
+          `Dear Customer, enrolled in WHP GMS. Enrolment ID: ${enrolmentId}. Monthly: Rs.${amt}. Please pay at store. - WHP Jewellers`
+        );
+        cache.del(`otp:${cp}`);
+        return res.json({ success: true, enrolmentId, message: 'Enrolment successful! Please pay at store.', razorpay: null });
       }
+
+      cache.del(`otp:${cp}`);
 
       return res.json({
         success:     true,
         enrolmentId,
-        message:     'Enrolment successful!',
-        razorpay:    pay === 'upi' ? { shortUrl: razorpayShortUrl, subscriptionId: razorpaySubId } : null
+        message:     'Enrolment created! Please approve UPI mandate.',
+        razorpay:    { shortUrl: razorpayShortUrl, subscriptionId: razorpaySubId }
       });
+
     } catch(err) {
       console.error('[GMS] enrolment error:', err.message);
       return res.status(500).json({ success: false, message: 'Enrolment failed. Please try again.' });
@@ -182,7 +225,7 @@ module.exports = function(app, cache) {
   // ── GET /api/gms-enrolments ──────────────────────────
   app.get('/api/gms-enrolments', staffAuth, async (req, res) => {
     try {
-      let query = 'SELECT * FROM gms_enrolments WHERE 1=1';
+      let query = "SELECT * FROM gms_enrolments WHERE status != 'Draft'";
       const params = [];
       if (req.staff.role === 'branch' && req.staff.branch) {
         query += ' AND preferred_branch=?';
@@ -214,7 +257,9 @@ module.exports = function(app, cache) {
     try {
       const q = '%' + (req.query.q||'') + '%';
       const [rows] = await db.query(
-        'SELECT * FROM gms_enrolments WHERE (enrolment_id LIKE ? OR phone LIKE ? OR name LIKE ?) ORDER BY created_at DESC LIMIT 50',
+        `SELECT * FROM gms_enrolments WHERE status != 'Draft' 
+         AND (enrolment_id LIKE ? OR phone LIKE ? OR name LIKE ?) 
+         ORDER BY created_at DESC LIMIT 50`,
         [q, q, q]
       );
       return res.json({ success: true, rows });
@@ -245,7 +290,10 @@ module.exports = function(app, cache) {
       const cp      = cleanPhone(req.body.phone);
       const otpData = cache.get(`otp:${cp}`);
       if (!otpData?.verified) return res.status(401).json({ success: false, message: 'OTP not verified.' });
-      const [enrolments] = await db.query('SELECT * FROM gms_enrolments WHERE phone=? ORDER BY created_at DESC', [cp]);
+      const [enrolments] = await db.query(
+        "SELECT * FROM gms_enrolments WHERE phone=? AND status != 'Draft' ORDER BY created_at DESC",
+        [cp]
+      );
       const result = [];
       for (const e of enrolments) {
         const [payments] = await db.query('SELECT * FROM gms_payments WHERE enrolment_id=? ORDER BY month_num', [e.enrolment_id]);
