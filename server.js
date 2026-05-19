@@ -26,14 +26,6 @@ app.use(function(req, res, next) {
 // ── Middleware ───────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
 
-// !! IMPORTANT: Razorpay webhook needs raw body for signature verification
-// Must be registered BEFORE express.json()
-app.use('/api/gms-payment-webhook', (req, res, next) => {
-  let rawBody = '';
-  req.on('data', chunk => { rawBody += chunk; });
-  req.on('end', () => { req.rawBody = rawBody; next(); });
-});
-
 app.use(express.json({ limit: '10mb' }));
 
 // ── Rate limiter (OTP endpoints) ─────────────────────────
