@@ -303,6 +303,18 @@ module.exports = function(app, cache) {
               break;
             }
 
+            // Convert Draft → Active on first payment
+            if (enrol.status === 'Draft') {
+              await db.query(
+                "UPDATE gms_enrolments SET status='Active' WHERE enrolment_id=?",
+                [enrol.enrolment_id]
+              );
+              await sendSms(enrol.phone,
+                `Dear Customer, your WHP GMS enrolment ${enrol.enrolment_id} is now ACTIVE! Monthly: Rs.${enrol.instalment_amt} x ${enrol.pay_months} months. - WHP Jewellers`
+              );
+              console.log(`[Webhook] Draft → Active: ${enrol.enrolment_id}`);
+            }
+
             // Mark month as paid
             const result = await markMonthPaidAuto(
               enrol.enrolment_id,
@@ -461,6 +473,26 @@ module.exports = function(app, cache) {
         paidCount:      sub.paid_count,
         remainingCount: sub.remaining_count
       });
+    } catch(err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── GET /api/razorpay/resume/:enrolmentId ────────────
+  // Customer resumes a Draft enrolment payment
+  app.get('/api/razorpay/resume/:enrolmentId', async (req, res) => {
+    try {
+      const [rows] = await db.query(
+        "SELECT * FROM gms_enrolments WHERE enrolment_id=? AND status='Draft'",
+        [req.params.enrolmentId]
+      );
+      if (!rows.length) return res.status(404).json({ success: false, message: 'No pending payment found.' });
+      const enrol = rows[0];
+      if (!enrol.razorpay_subscription_id) {
+        return res.status(400).json({ success: false, message: 'No subscription found.' });
+      }
+      const sub = await rzp.subscriptions.fetch(enrol.razorpay_subscription_id);
+      return res.json({ success: true, shortUrl: sub.short_url, status: sub.status });
     } catch(err) {
       return res.status(500).json({ success: false, message: err.message });
     }
