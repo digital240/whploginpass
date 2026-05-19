@@ -110,7 +110,21 @@ module.exports = function(app, cache) {
             }
           });
 
-          const subscription = await rzp.subscriptions.create({
+          // Create or find Razorpay customer first
+          let razorpayCustomerId = null;
+          try {
+            const custRes = await rzp.customers.create({
+              name:    name,
+              email:   email || `${cp}@whpjewellers.com`,
+              contact: `+91${cp}`,
+              fail_existing: 0 // don't fail if customer exists
+            });
+            razorpayCustomerId = custRes.id;
+          } catch(ce) {
+            console.log('[GMS] Razorpay customer create:', ce.message);
+          }
+
+          const subOptions = {
             plan_id:         plan.id,
             total_count:     parseInt(paymo),
             quantity:        1,
@@ -121,7 +135,14 @@ module.exports = function(app, cache) {
               customer_phone: cp,
               scheme:         `${tenure} Month GMS`
             }
-          });
+          };
+
+          // Pre-fill customer so Razorpay doesn't ask again
+          if (razorpayCustomerId) {
+            subOptions.customer_id = razorpayCustomerId;
+          }
+
+          const subscription = await rzp.subscriptions.create(subOptions);
 
           razorpayShortUrl = subscription.short_url;
           razorpaySubId    = subscription.id;
