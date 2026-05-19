@@ -488,12 +488,46 @@ module.exports = function(app, cache) {
       );
       if (!rows.length) return res.status(404).json({ success: false, message: 'No pending payment found.' });
       const enrol = rows[0];
-      if (!enrol.razorpay_subscription_id) {
-        return res.status(400).json({ success: false, message: 'No subscription found.' });
-      }
-      const sub = await rzp.subscriptions.fetch(enrol.razorpay_subscription_id);
-      return res.json({ success: true, shortUrl: sub.short_url, status: sub.status });
+
+      // Always create fresh subscription — old one may be expired or invalid
+      const amountPaise = Math.round(parseFloat(enrol.instalment_amt) * 100);
+      const startAt     = Math.floor(Date.now() / 1000) + 60;
+
+      // Create Razorpay customer to pre-fill details
+      let customerId = null;
+      try {
+        const cust = await rzp.customers.create({
+          name: enrol.name, contact: '+91' + enrol.phone,
+          email: enrol.email || enrol.phone + '@whpjewellers.com', fail_existing: 0
+        });
+        customerId = cust.id;
+      } catch(ce) { console.log('[Resume] Customer note:', ce.message); }
+
+      // Fresh plan
+      const plan = await rzp.plans.create({
+        period: 'monthly', interval: 1,
+        item: { name: 'WHP GMS - ' + enrol.enrolment_id, amount: amountPaise, currency: 'INR', description: 'WHP Golden Moments Scheme' }
+      });
+
+      // Fresh subscription
+      const subOpts = {
+        plan_id: plan.id, total_count: parseInt(enrol.pay_months),
+        quantity: 1, start_at: startAt, customer_notify: 1,
+        notes: { enrolment_id: enrol.enrolment_id, customer_phone: enrol.phone }
+      };
+      if (customerId) subOpts.customer_id = customerId;
+      const sub = await rzp.subscriptions.create(subOpts);
+
+      // Update DB with new subscription IDs
+      await db.query(
+        "UPDATE gms_enrolments SET razorpay_plan_id=?, razorpay_subscription_id=?, razorpay_sub_status='created' WHERE enrolment_id=?",
+        [plan.id, sub.id, enrol.enrolment_id]
+      );
+
+      console.log('[Resume] Fresh subscription:', sub.id, 'for', enrol.enrolment_id);
+      return res.json({ success: true, shortUrl: sub.short_url, subscriptionId: sub.id });
     } catch(err) {
+      console.error('[Resume] Error:', err.message);
       return res.status(500).json({ success: false, message: err.message });
     }
   });
