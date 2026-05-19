@@ -85,7 +85,73 @@ module.exports = function(app, cache) {
 
       cache.del(`otp:${cp}`);
 
-      return res.json({ success: true, enrolmentId, message: 'Enrolment successful!' });
+      // ── If UPI selected → create Razorpay subscription ──
+      let razorpayShortUrl = null;
+      let razorpaySubId    = null;
+
+      if (pay === 'upi') {
+        try {
+          const Razorpay = require('razorpay');
+          const rzp = new Razorpay({
+            key_id:     process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET
+          });
+
+          const amountPaise = Math.round(parseFloat(amt) * 100);
+          const startAt     = Math.floor(Date.now() / 1000) + 60;
+
+          const plan = await rzp.plans.create({
+            period: 'monthly', interval: 1,
+            item: {
+              name:        `WHP GMS - ${enrolmentId}`,
+              amount:      amountPaise,
+              currency:    'INR',
+              description: `WHP Golden Moments Scheme - ${tenure} months`
+            }
+          });
+
+          const subscription = await rzp.subscriptions.create({
+            plan_id:         plan.id,
+            total_count:     parseInt(paymo),
+            quantity:        1,
+            start_at:        startAt,
+            customer_notify: 1,
+            notes: {
+              enrolment_id:   enrolmentId,
+              customer_phone: cp,
+              scheme:         `${tenure} Month GMS`
+            }
+          });
+
+          razorpayShortUrl = subscription.short_url;
+          razorpaySubId    = subscription.id;
+
+          await db.query(
+            `UPDATE gms_enrolments 
+             SET razorpay_plan_id=?, razorpay_subscription_id=?, razorpay_sub_status='created'
+             WHERE enrolment_id=?`,
+            [plan.id, subscription.id, enrolmentId]
+          );
+
+          console.log(`[GMS] Razorpay subscription: ${subscription.id} for ${enrolmentId}`);
+
+          // Send mandate SMS as backup
+          await sendSms(cp,
+            `Dear Customer, please approve your WHP GMS UPI mandate: ${subscription.short_url} - WHP Jewellers`
+          );
+
+        } catch(rzpErr) {
+          console.error('[GMS] Razorpay error:', rzpErr.message);
+          // Enrolment still saved even if Razorpay fails
+        }
+      }
+
+      return res.json({
+        success:     true,
+        enrolmentId,
+        message:     'Enrolment successful!',
+        razorpay:    pay === 'upi' ? { shortUrl: razorpayShortUrl, subscriptionId: razorpaySubId } : null
+      });
     } catch(err) {
       console.error('[GMS] enrolment error:', err.message);
       return res.status(500).json({ success: false, message: 'Enrolment failed. Please try again.' });
