@@ -532,5 +532,92 @@ module.exports = function(app, cache) {
     }
   });
 
+  // ── POST /api/razorpay/pay-onetime ───────────────────
+  // Creates a one-time Razorpay order for current month payment
+  app.post('/api/razorpay/pay-onetime', async (req, res) => {
+    try {
+      const { enrolmentId } = req.body;
+      const [rows] = await db.query(
+        'SELECT * FROM gms_enrolments WHERE enrolment_id=?',
+        [enrolmentId]
+      );
+      if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
+      const enrol = rows[0];
+
+      // Get next pending month
+      const monthNum = await getNextPendingMonth(enrolmentId);
+      if (!monthNum) return res.status(400).json({ success: false, message: 'No pending payments.' });
+
+      const amountPaise = Math.round(parseFloat(enrol.instalment_amt) * 100);
+
+      // Create Razorpay order (one-time, not subscription)
+      const order = await rzp.orders.create({
+        amount:   amountPaise,
+        currency: 'INR',
+        receipt:  `${enrolmentId}-M${monthNum}`,
+        notes: {
+          enrolment_id:   enrolmentId,
+          month_num:      String(monthNum),
+          customer_phone: enrol.phone,
+          payment_type:   'one_time'
+        }
+      });
+
+      console.log(`[Razorpay] One-time order: ${order.id} for ${enrolmentId} Month ${monthNum}`);
+
+      return res.json({
+        success:     true,
+        orderId:     order.id,
+        amount:      enrol.instalment_amt,
+        amountPaise: amountPaise,
+        monthNum,
+        enrolmentId,
+        currency:    'INR'
+      });
+    } catch(err) {
+      console.error('[Razorpay] pay-onetime error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── POST /api/razorpay/verify-onetime ─────────────────
+  // Verifies one-time payment signature and marks month paid
+  app.post('/api/razorpay/verify-onetime', async (req, res) => {
+    try {
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature, enrolmentId, monthNum } = req.body;
+
+      // Verify signature
+      const body     = razorpay_order_id + '|' + razorpay_payment_id;
+      const expected = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET).update(body).digest('hex');
+      if (expected !== razorpay_signature) {
+        return res.status(400).json({ success: false, message: 'Payment verification failed.' });
+      }
+
+      // Find enrolment
+      const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+      if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
+      const enrol = rows[0];
+
+      // If scheme was Draft → activate it
+      if (enrol.status === 'Draft') {
+        await db.query("UPDATE gms_enrolments SET status='Active' WHERE enrolment_id=?", [enrolmentId]);
+        console.log(`[Razorpay] Draft → Active via one-time payment: ${enrolmentId}`);
+      }
+
+      // Mark month as paid
+      const result = await markMonthPaidAuto(enrolmentId, parseInt(monthNum), razorpay_payment_id, parseFloat(enrol.instalment_amt) * 100);
+
+      return res.json({
+        success: true,
+        message: `Month ${monthNum} payment verified and recorded!`,
+        made:    result?.made,
+        status:  result?.status
+      });
+    } catch(err) {
+      console.error('[Razorpay] verify-onetime error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   console.log('[GMS] Razorpay routes loaded');
 };
