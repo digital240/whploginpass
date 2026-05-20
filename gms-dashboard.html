@@ -579,24 +579,28 @@ tr:hover td{background:#fdf8f5;}
   </div>
 </div>
 
-<!-- ══ MODAL: MARK PAID ══ -->
+<!-- ══ MODAL: MARK PAID WITH OTP ══ -->
 <div class="modal-backdrop" id="markpaid-modal" onclick="onBdClick(event,'markpaid-modal')">
   <div class="modal-box">
     <div class="modal-hdr">
-      <div class="modal-title" id="mp-title">Mark Month Paid</div>
+      <div class="modal-title">Mark Month Paid</div>
       <button class="modal-close" onclick="closeModal('markpaid-modal')">✕</button>
     </div>
     <div class="modal-body">
       <div id="mp-lock-banner" class="lock-banner" style="display:none">
         🔒 This enrolment is currently being edited by <span id="mp-lock-user"></span>
       </div>
+
+      <!-- Scheme info -->
+      <div style="background:#f5f0ee;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#5a2a32;font-weight:500" id="mp-scheme-info">—</div>
+
       <div class="fg">
         <label>Enrolment ID</label>
         <input type="text" id="mp-enrol-id" readonly style="opacity:0.7">
       </div>
       <div class="fg">
         <label>Month Number</label>
-        <input type="number" id="mp-month" min="1" max="23" placeholder="e.g. 1">
+        <input type="number" id="mp-month" min="1" max="23" placeholder="e.g. 1" readonly style="opacity:0.7">
       </div>
       <div class="fg">
         <label>Late Fee (₹) — optional</label>
@@ -606,10 +610,26 @@ tr:hover td{background:#fdf8f5;}
         <label>Notes</label>
         <input type="text" id="mp-notes" placeholder="Any remarks…">
       </div>
+
+      <!-- Step 1: Send OTP -->
+      <div style="background:#fff8e8;border:1px solid rgba(184,137,42,0.25);border-radius:8px;padding:12px 14px;margin-top:4px">
+        <div style="font-size:12px;font-weight:600;color:#6b4a10;margin-bottom:8px">🔐 Customer OTP Verification Required</div>
+        <div style="font-size:12px;color:#8a6030;margin-bottom:10px">Click "Send OTP" to send a verification code to the customer's mobile. Ask the customer to read the OTP to you.</div>
+        <button class="btn btn-outline" id="mp-send-otp-btn" onclick="sendPayOtp()" style="width:100%">📱 Send OTP to Customer</button>
+      </div>
+
+      <!-- Step 2: Enter OTP -->
+      <div id="mp-otp-section" style="display:none;margin-top:10px">
+        <div class="fg">
+          <label>Enter OTP (from customer)</label>
+          <input type="number" id="mp-otp" placeholder="6-digit OTP" maxlength="6" style="font-size:20px;letter-spacing:0.2em;text-align:center" oninput="if(this.value.length>6)this.value=this.value.slice(0,6)">
+        </div>
+        <div id="mp-otp-hint" style="font-size:12px;margin-top:4px"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('markpaid-modal')">Cancel</button>
-      <button class="btn btn-green" id="mp-confirm-btn" onclick="confirmMarkPaid()">✓ Mark as Paid</button>
+      <button class="btn btn-green" id="mp-confirm-btn" onclick="confirmMarkPaid()" style="display:none">✓ Confirm Payment</button>
     </div>
   </div>
 </div>
@@ -1079,9 +1099,8 @@ async function openDetail(enrolId) {
   }
 }
 
-// ── Mark Paid ─────────────────────────────────────────────
+// ── Mark Paid with OTP ────────────────────────────────
 function openMarkPaid(enrolId, monthNum) {
-  // Check branch permission
   const enrol = _allEnrolments.find(e => e.enrolment_id === enrolId);
   if (enrol && _role !== 'admin' && enrol.preferred_branch !== _branch) {
     showToast('You can only mark payments for ' + _branch + ' branch.', 'error');
@@ -1093,40 +1112,87 @@ function openMarkPaid(enrolId, monthNum) {
   document.getElementById('mp-notes').value     = '';
   document.getElementById('mp-lock-banner').style.display = 'none';
   document.getElementById('mp-confirm-btn').disabled = false;
+
+  // Reset OTP section
+  document.getElementById('mp-otp-section').style.display  = 'none';
+  document.getElementById('mp-send-otp-btn').style.display = 'block';
+  document.getElementById('mp-confirm-btn').style.display  = 'none';
+  document.getElementById('mp-otp').value = '';
+  document.getElementById('mp-otp-hint').textContent = '';
+
+  // Show scheme info
+  if (enrol) {
+    document.getElementById('mp-scheme-info').textContent =
+      `${enrol.name} · ${enrol.phone} · ₹${Number(enrol.instalment_amt).toLocaleString('en-IN')}/month`;
+  }
   openModal('markpaid-modal');
 }
 
-async function confirmMarkPaid() {
-  const enrolId = document.getElementById('mp-enrol-id').value;
+async function sendPayOtp() {
+  const enrolId  = document.getElementById('mp-enrol-id').value;
   const monthNum = parseInt(document.getElementById('mp-month').value);
-  const lateFee  = parseFloat(document.getElementById('mp-latefee').value) || 0;
-  const notes    = document.getElementById('mp-notes').value.trim();
-  if (!enrolId || !monthNum) { showToast('Enter enrolment ID and month number.', 'error'); return; }
+  if (!enrolId || !monthNum) { showToast('Missing enrolment or month.', 'error'); return; }
 
-  const btn = document.getElementById('mp-confirm-btn');
-  btn.disabled = true; btn.textContent = 'Processing…';
+  const btn = document.getElementById('mp-send-otp-btn');
+  btn.disabled = true; btn.textContent = 'Sending OTP…';
 
   try {
-    const res  = await fetch(API + '/api/gms-mark-paid', {
+    const res  = await fetch(API + '/api/gms-send-pay-otp', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
-      body: JSON.stringify({ enrolmentId: enrolId, monthNum, lateFee, notes })
+      body: JSON.stringify({ enrolmentId: enrolId, monthNum })
     });
     const data = await res.json();
-    btn.disabled = false; btn.textContent = '✓ Mark as Paid';
+    btn.disabled = false; btn.textContent = 'Resend OTP';
+
     if (data.success) {
-      closeModal('markpaid-modal');
-      showToast(data.message || 'Marked as paid!', 'ok');
-      loadEnrolments();
-      if (data.allDone) {
-        showToast('🎉 Scheme completed! Generate coupon from admin.', 'ok');
-      }
-      // Refresh detail if open
-      if (_currentEnrolId === enrolId) openDetail(enrolId);
+      document.getElementById('mp-otp-section').style.display  = 'block';
+      document.getElementById('mp-confirm-btn').style.display  = 'block';
+      document.getElementById('mp-otp-hint').textContent       = '✓ ' + data.message;
+      document.getElementById('mp-otp-hint').style.color       = '#2d7a4f';
+      showToast(data.message, 'ok');
     } else {
-      showToast(data.message || 'Failed.', 'error');
+      showToast(data.message || 'Failed to send OTP.', 'error');
     }
   } catch(e) {
-    btn.disabled = false; btn.textContent = '✓ Mark as Paid';
+    btn.disabled = false; btn.textContent = 'Send OTP to Customer';
+    showToast('Connection error.', 'error');
+  }
+}
+
+async function confirmMarkPaid() {
+  const enrolId  = document.getElementById('mp-enrol-id').value;
+  const monthNum = parseInt(document.getElementById('mp-month').value);
+  const otp      = document.getElementById('mp-otp').value.trim();
+  const lateFee  = parseFloat(document.getElementById('mp-latefee').value) || 0;
+  const notes    = document.getElementById('mp-notes').value.trim();
+
+  if (!enrolId || !monthNum) { showToast('Missing enrolment or month.', 'error'); return; }
+  if (!otp || otp.length !== 6) { showToast('Enter the 6-digit OTP from customer.', 'error'); return; }
+
+  const btn = document.getElementById('mp-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Verifying OTP…';
+
+  try {
+    const res  = await fetch(API + '/api/gms-verify-pay-otp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ enrolmentId: enrolId, monthNum, otp, lateFee, notes })
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = '✓ Confirm Payment';
+
+    if (data.success) {
+      closeModal('markpaid-modal');
+      showToast(data.message || 'Month marked paid!', 'ok');
+      loadEnrolments();
+      if (data.allDone) showToast('🎉 Scheme matured! Generate coupon from admin.', 'ok');
+      if (_currentEnrolId === enrolId) openDetail(enrolId);
+    } else {
+      document.getElementById('mp-otp-hint').textContent = data.message || 'Incorrect OTP.';
+      document.getElementById('mp-otp-hint').style.color = '#c0392b';
+      showToast(data.message || 'Incorrect OTP.', 'error');
+    }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = '✓ Confirm Payment';
     showToast('Connection error.', 'error');
   }
 }
