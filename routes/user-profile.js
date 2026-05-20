@@ -43,7 +43,14 @@ module.exports = function(app, cache) {
           mobile: u.mobile, email: u.email, secondary_mobile: u.secondary_mobile,
           address1: u.address1, address2: u.address2, city: u.city,
           state: u.state, pincode: u.pincode, photo_url: u.photo_url,
-          member_since: u.created_at
+          member_since: u.created_at,
+          // Nominee details
+          nominee_name: u.nominee_name, nominee_address: u.nominee_address,
+          nominee_pan: u.nominee_pan, nominee_aadhaar: u.nominee_aadhaar,
+          nominee_mobile: u.nominee_mobile, nominee_relation: u.nominee_relation,
+          // Bank details
+          bank_name: u.bank_name, bank_branch: u.bank_branch,
+          bank_account: u.bank_account, bank_ifsc: u.bank_ifsc
         },
         enrolments
       });
@@ -194,6 +201,41 @@ module.exports = function(app, cache) {
       cache.del(`gms_sec_otp:${req.gmsUser.user_id}:${secondary}`);
       return res.json({ success: true });
     } catch(err) { return res.status(500).json({ success: false, message: 'Verification failed.' }); }
+  });
+
+  // ── POST /api/gms/update-nominee ─────────────────────
+  app.post('/api/gms/update-nominee', userAuth, async (req, res) => {
+    try {
+      const { nominee_name, nominee_address, nominee_pan, nominee_aadhaar, nominee_mobile, nominee_relation } = req.body;
+      await db.query(
+        `UPDATE gms_users SET 
+         nominee_name=?, nominee_address=?, nominee_pan=?,
+         nominee_aadhaar=?, nominee_mobile=?, nominee_relation=?
+         WHERE user_id=?`,
+        [nominee_name||'', nominee_address||'', nominee_pan||'',
+         nominee_aadhaar||'', nominee_mobile||'', nominee_relation||'',
+         req.gmsUser.user_id]
+      );
+      const [rows] = await db.query('SELECT * FROM gms_users WHERE user_id=?', [req.gmsUser.user_id]);
+      return res.json({ success: true, user: rows[0] });
+    } catch(err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── POST /api/gms/update-bank ─────────────────────────
+  app.post('/api/gms/update-bank', userAuth, async (req, res) => {
+    try {
+      const { bank_name, bank_branch, bank_account, bank_ifsc } = req.body;
+      await db.query(
+        'UPDATE gms_users SET bank_name=?, bank_branch=?, bank_account=?, bank_ifsc=? WHERE user_id=?',
+        [bank_name||'', bank_branch||'', bank_account||'', bank_ifsc||'', req.gmsUser.user_id]
+      );
+      const [rows] = await db.query('SELECT * FROM gms_users WHERE user_id=?', [req.gmsUser.user_id]);
+      return res.json({ success: true, user: rows[0] });
+    } catch(err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
   });
 
   console.log('[GMS] User profile routes loaded');
