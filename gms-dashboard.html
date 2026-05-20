@@ -975,8 +975,14 @@ function bootApp() {
   document.getElementById('hdr-user-label').textContent = _uname;
 
   // Show/hide admin-only nav items + filter
+  // Show/hide admin-only nav items + filter
   document.querySelectorAll('.admin-only').forEach(el => {
-    el.style.display = _role === 'admin' ? '' : 'none';
+    if (_role === 'admin') {
+      // Use 'flex' for the nav items to override the CSS, and 'block' for everything else
+      el.style.display = el.classList.contains('nav-item') ? 'flex' : 'block';
+    } else {
+      el.style.display = 'none';
+    }
   });
   if (_role === 'admin') {
     document.getElementById('filter-branch').style.display = '';
