@@ -1188,16 +1188,16 @@ async function openDetail(enrolId) {
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--red);margin-bottom:10px">Danger Zone</div>
           ${_role === 'admin' ? `
             <div style="display:flex;gap:10px;flex-wrap:wrap">
-              <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid rgba(192,57,43,0.3)" onclick="openDiscontinueModal('${enrolId}','${e.name}')">
+              <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid rgba(192,57,43,0.3)" onclick="_openDisc('${enrolId}')">
                 ⚠ Direct Discontinue
               </button>
-              <button class="btn btn-sm" style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3)" onclick="openRequestDiscontinueModal('${enrolId}','${e.name}','${e.instalment_amt}','${e.payments_made}')">
+              <button class="btn btn-sm" style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3)" onclick="_openReqDisc('${enrolId}')">
                 📋 View/Create Request
               </button>
             </div>
             <p style="font-size:11px;color:var(--text-soft);margin-top:6px">Direct discontinue takes effect immediately. Or manage via request flow.</p>
           ` : `
-            <button class="btn btn-sm" style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3)" onclick="openRequestDiscontinueModal('${enrolId}','${e.name}','${e.instalment_amt}','${e.payments_made}')">
+            <button class="btn btn-sm" style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3)" onclick="openRequestDiscontinueModal('${enrolId}',${JSON.stringify(e.name)},'${e.instalment_amt}','${e.payments_made}')">
               📋 Request Discontinue
             </button>
             <p style="font-size:11px;color:var(--text-soft);margin-top:6px">Submit a discontinue request for admin approval.</p>
@@ -1625,9 +1625,19 @@ async function loadDiscRequests() {
         <td style="color:var(--green);font-weight:600">₹${Number(r.refund_amount).toLocaleString('en-IN')}</td>
         <td><span class="badge ${r.status==='Pending'?'badge-matured':r.status==='Approved'?'badge-active':'badge-discontinued'}">${r.status}</span></td>
         <td class="td-muted">${fmtDate(r.created_at)}</td>
-        <td>${r.status === 'Pending' ? `<button class="btn btn-outline btn-sm" onclick="openReviewModal(${r.id},'${r.enrolment_id}','${r.name}','${r.phone}','${r.reason}','${r.refund_amount}','${r.branch}','${r.payments_made}','${r.instalment_amt}')">Review →</button>` : `<span style="font-size:11px;color:var(--text-soft)">Reviewed by ${r.reviewed_by||'—'}</span>`}</td>
+        <td>${r.status === 'Pending' ? `<button class="btn btn-outline btn-sm" onclick="openReviewModal(${r.id},'${r.enrolment_id}',${JSON.stringify(r.name)},${JSON.stringify(r.phone)},${JSON.stringify(r.reason)},'${r.refund_amount}','${r.branch}','${r.payments_made}','${r.instalment_amt}')">Review →</button>` : `<span style="font-size:11px;color:var(--text-soft)">Reviewed by ${r.reviewed_by||'—'}</span>`}</td>
       </tr>`).join('');
   } catch(e) { console.error('loadDiscRequests error:', e); }
+}
+
+// Safe wrappers — look up enrolment data by ID to avoid apostrophe issues
+function _openDisc(enrolId) {
+  const e = _allEnrolments.find(x => x.enrolment_id === enrolId) || {};
+  openDiscontinueModal(enrolId, e.name || enrolId);
+}
+function _openReqDisc(enrolId) {
+  const e = _allEnrolments.find(x => x.enrolment_id === enrolId) || {};
+  openRequestDiscontinueModal(enrolId, e.name || '', e.instalment_amt || 0, e.payments_made || 0);
 }
 
 function openRequestDiscontinueModal(enrolId, name, instalment, paymentsMade) {
