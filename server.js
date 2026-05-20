@@ -4,6 +4,7 @@ const express   = require('express');
 const helmet    = require('helmet');
 const rateLimit = require('express-rate-limit');
 const NodeCache = require('node-cache');
+const path      = require('path');
 
 const app   = express();
 const cache = new NodeCache({ stdTTL: 600 });
@@ -25,7 +26,6 @@ app.use(function(req, res, next) {
 
 // ── Middleware ───────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
-
 app.use(express.json({ limit: '10mb' }));
 
 // ── Rate limiter (OTP endpoints) ─────────────────────────
@@ -37,6 +37,11 @@ const otpLimiter = rateLimit({
 app.use('/api/send-otp',     otpLimiter);
 app.use('/api/gms/send-otp', otpLimiter);
 
+// ── Admin dashboard ───────────────────────────────────────
+app.get('/whp_admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'gms-dashboard.html'));
+});
+
 // ── Health check ─────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', app: 'WHP GMS', time: new Date().toISOString() }));
 
@@ -46,10 +51,10 @@ require('./routes/enrolments')(app, cache);
 require('./routes/payments')(app);
 require('./routes/coupons')(app);
 require('./routes/reports')(app);
-require('./routes/razorpay')(app, cache);   // ← NEW: Razorpay E-Mandate
+require('./routes/razorpay')(app, cache);
 require('./routes/user-auth')(app, cache);
 require('./routes/user-profile')(app, cache);
-require('./routes/app-auth')(app, cache);   // ← kept from your existing server.js
+require('./routes/app-auth')(app, cache);
 
 // ── Legacy WLP routes (keep working) ────────────────────
 require('./wlp-routes')(app, cache);
