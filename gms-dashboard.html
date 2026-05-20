@@ -1197,9 +1197,9 @@ async function openDetail(enrolId) {
             </div>
             <p style="font-size:11px;color:var(--text-soft);margin-top:6px">Direct discontinue takes effect immediately. Or manage via request flow.</p>
           ` : `
-            <button class="btn btn-sm" style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3)" onclick="openRequestDiscontinueModal('${enrolId}',${JSON.stringify(e.name)},'${e.instalment_amt}','${e.payments_made}')">
-              📋 Request Discontinue
-            </button>
+           <button class="btn btn-sm" style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3)" onclick="_openReqDisc('${enrolId}')">
+  📋 Request Discontinue
+</button>
             <p style="font-size:11px;color:var(--text-soft);margin-top:6px">Submit a discontinue request for admin approval.</p>
           `}
         </div>` : ''}
