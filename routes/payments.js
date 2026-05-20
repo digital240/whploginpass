@@ -39,7 +39,7 @@ module.exports = function(app) {
 
       // Send to customer
       await sendSms(enrol.phone,
-        `Dear user, your WHP Jewellers otp code is ${otp}`
+        `Dear Customer, your WHP GMS payment OTP for scheme ${enrolmentId} Month ${monthNum} is: ${otp}. Valid for 5 minutes. Share with branch staff only. - WHP Jewellers`
       );
 
       console.log(`[GMS] Pay OTP sent for ${enrolmentId} M${monthNum} to ${enrol.phone}`);
@@ -237,6 +237,157 @@ module.exports = function(app) {
       return res.json({ success: true, message: `Scheme ${enrolmentId} discontinued.` });
     } catch(err) {
       console.error('[GMS] discontinue error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── POST /api/gms-request-discontinue ───────────────
+  // Branch submits a discontinue request
+  app.post('/api/gms-request-discontinue', staffAuth, async (req, res) => {
+    try {
+      const { enrolmentId, reason } = req.body;
+      if (!enrolmentId || !reason) return res.status(400).json({ success: false, message: 'enrolmentId and reason required.' });
+
+      const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+      if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
+      const enrol = rows[0];
+
+      // Branch can only request for their own branch
+      if (req.staff.role === 'branch' && enrol.preferred_branch !== req.staff.branch) {
+        return res.status(403).json({ success: false, message: 'You can only request discontinue for your branch.' });
+      }
+
+      // Check if already has pending request
+      const [existing] = await db.query(
+        "SELECT id FROM gms_discontinue_requests WHERE enrolment_id=? AND status='Pending'",
+        [enrolmentId]
+      );
+      if (existing.length) return res.status(400).json({ success: false, message: 'A pending request already exists for this scheme.' });
+
+      // Calculate refund amount (paid months * instalment - 3%)
+      const [paidRows] = await db.query(
+        "SELECT COUNT(*) as paid FROM gms_payments WHERE enrolment_id=? AND status='Paid'",
+        [enrolmentId]
+      );
+      const paidMonths   = paidRows[0].paid;
+      const totalPaid    = paidMonths * parseFloat(enrol.instalment_amt);
+      const deduction    = totalPaid * 0.03;
+      const refundAmount = Math.round(totalPaid - deduction);
+
+      await db.query(
+        `INSERT INTO gms_discontinue_requests 
+         (enrolment_id, requested_by, branch, reason, refund_amount, status)
+         VALUES (?,?,?,?,?,'Pending')`,
+        [enrolmentId, req.staff.username, req.staff.branch||'Admin', reason, refundAmount]
+      );
+
+      // Audit log
+      await db.query(
+        'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+        [enrolmentId, 'Discontinue Requested', req.staff.username, req.staff.branch||'Admin',
+         `Reason: ${reason}. Refund estimate: Rs.${refundAmount}`]
+      );
+
+      // SMS to customer — inform request raised
+      await sendSms(enrol.phone,
+        `Dear Customer, a discontinuation request has been raised for your WHP GMS scheme ${enrolmentId}. Our team will review and contact you shortly. - WHP Jewellers`
+      );
+
+      return res.json({
+        success: true,
+        refundAmount,
+        message: `Discontinue request submitted. Estimated refund: ₹${refundAmount.toLocaleString('en-IN')} (after 3% deduction).`
+      });
+    } catch(err) {
+      console.error('[GMS] request-discontinue error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── GET /api/gms-discontinue-requests ────────────────
+  // Admin gets all pending discontinue requests
+  app.get('/api/gms-discontinue-requests', staffAuth, async (req, res) => {
+    try {
+      if (req.staff.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
+      const [rows] = await db.query(`
+        SELECT r.*, e.name, e.phone, e.instalment_amt, e.payments_made, e.pay_months,
+               e.total_redeemable, e.preferred_branch, e.status as scheme_status
+        FROM gms_discontinue_requests r
+        JOIN gms_enrolments e ON r.enrolment_id = e.enrolment_id
+        ORDER BY r.created_at DESC
+      `);
+      return res.json({ success: true, rows });
+    } catch(err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── POST /api/gms-review-discontinue ─────────────────
+  // Admin approves or rejects a discontinue request
+  app.post('/api/gms-review-discontinue', staffAuth, async (req, res) => {
+    try {
+      if (req.staff.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
+      const { requestId, action, adminNotes } = req.body;
+      if (!requestId || !action) return res.status(400).json({ success: false, message: 'requestId and action required.' });
+      if (!['Approved', 'Rejected'].includes(action)) return res.status(400).json({ success: false, message: 'action must be Approved or Rejected.' });
+
+      const [reqRows] = await db.query('SELECT * FROM gms_discontinue_requests WHERE id=?', [requestId]);
+      if (!reqRows.length) return res.status(404).json({ success: false, message: 'Request not found.' });
+      const request = reqRows[0];
+
+      if (request.status !== 'Pending') return res.status(400).json({ success: false, message: 'Request already reviewed.' });
+
+      const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [request.enrolment_id]);
+      if (!enrolRows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
+      const enrol = enrolRows[0];
+
+      // Update request status
+      await db.query(
+        `UPDATE gms_discontinue_requests 
+         SET status=?, admin_notes=?, reviewed_by=?, reviewed_at=NOW() WHERE id=?`,
+        [action, adminNotes||'', req.staff.username, requestId]
+      );
+
+      if (action === 'Approved') {
+        // Discontinue the scheme
+        await db.query(
+          "UPDATE gms_enrolments SET status='Discontinued', completion_date=CURDATE() WHERE enrolment_id=?",
+          [request.enrolment_id]
+        );
+
+        // Audit log
+        await db.query(
+          'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+          [request.enrolment_id, 'Discontinue Approved', req.staff.username, 'Admin',
+           `Request #${requestId} approved. Refund: Rs.${request.refund_amount}. Notes: ${adminNotes||''}`]
+        );
+
+        // SMS to customer
+        await sendSms(enrol.phone,
+          `Dear Customer, your WHP GMS scheme ${request.enrolment_id} has been discontinued. Refund of Rs.${request.refund_amount} (after 3% deduction) will be processed via account payee cheque within 30 days. - WHP Jewellers`
+        );
+
+      } else {
+        // Rejected — notify customer
+        await db.query(
+          'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+          [request.enrolment_id, 'Discontinue Rejected', req.staff.username, 'Admin',
+           `Request #${requestId} rejected. Notes: ${adminNotes||''}`]
+        );
+
+        await sendSms(enrol.phone,
+          `Dear Customer, your discontinuation request for WHP GMS scheme ${request.enrolment_id} has been reviewed. Please contact your nearest WHP branch for more information. - WHP Jewellers`
+        );
+      }
+
+      return res.json({
+        success: true,
+        message: action === 'Approved'
+          ? `Scheme discontinued. Refund of ₹${request.refund_amount} to be processed.`
+          : 'Request rejected.'
+      });
+    } catch(err) {
+      console.error('[GMS] review-discontinue error:', err.message);
       return res.status(500).json({ success: false, message: err.message });
     }
   });
