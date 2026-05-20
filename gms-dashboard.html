@@ -875,8 +875,8 @@ tr:hover td{background:#fdf8f5;}
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('review-disc-modal')">Cancel</button>
-      <button class="btn btn-sm" style="background:var(--red);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-family:var(--ff);font-weight:600;cursor:pointer" onclick="reviewDiscontinue('Rejected')">✕ Reject</button>
-      <button class="btn btn-green" onclick="reviewDiscontinue('Approved')">✓ Approve & Discontinue</button>
+      <button id="rv-reject-btn" class="btn btn-sm" style="background:var(--red);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-family:var(--ff);font-weight:600;cursor:pointer" onclick="reviewDiscontinue('Rejected')">✕ Reject</button>
+      <button id="rv-approve-btn" class="btn btn-green" onclick="reviewDiscontinue('Approved')">✓ Approve & Discontinue</button>
     </div>
   </div>
 </div>
@@ -1717,8 +1717,8 @@ async function reviewDiscontinue(action) {
   if (action === 'Approved' && !confirm(`Are you sure you want to APPROVE this discontinue request? The scheme will be permanently discontinued.`)) return;
 
   const btn = action === 'Approved'
-    ? document.querySelector('#review-disc-modal .btn-green')
-    : document.querySelector('#review-disc-modal [onclick="reviewDiscontinue('Rejected')"]');
+    ? document.getElementById('rv-approve-btn')
+    : document.getElementById('rv-reject-btn');
   btn.disabled = true; btn.textContent = 'Processing…';
 
   try {
