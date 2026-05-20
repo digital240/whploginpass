@@ -39,7 +39,7 @@ module.exports = function(app) {
 
       // Send to customer
       await sendSms(enrol.phone,
-        `Dear Customer, your WHP GMS payment OTP for scheme ${enrolmentId} Month ${monthNum} is: ${otp}. Valid for 5 minutes. Share with branch staff only. - WHP Jewellers`
+        `Dear user, your WHP Jewellers otp code is ${otp}`
       );
 
       console.log(`[GMS] Pay OTP sent for ${enrolmentId} M${monthNum} to ${enrol.phone}`);
