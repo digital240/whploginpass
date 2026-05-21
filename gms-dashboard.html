@@ -411,6 +411,7 @@ tr:hover td{background:#fdf8f5;}
         <div class="stats-grid" id="stats-grid">
           <div class="stat-card"><div class="stat-num" id="s-total">—</div><div class="stat-label">Total Schemes</div></div>
           <div class="stat-card green"><div class="stat-num" id="s-active">—</div><div class="stat-label">Active</div></div>
+          <div class="stat-card amber"><div class="stat-num" id="s-draft">—</div><div class="stat-label">Draft (Pending UPI)</div></div>
           <div class="stat-card amber"><div class="stat-num" id="s-matured">—</div><div class="stat-label">Matured</div></div>
           <div class="stat-card blue"><div class="stat-num" id="s-complete">—</div><div class="stat-label">Completed</div></div>
           <div class="stat-card green"><div class="stat-num" id="s-collected">—</div><div class="stat-label">Total Collected (incl. fees)</div></div>
@@ -1032,6 +1033,7 @@ async function loadOverview() {
     const s = data.stats;
     document.getElementById('s-total').textContent    = s.total;
     document.getElementById('s-active').textContent   = s.active;
+    document.getElementById('s-draft').textContent    = s.draft || 0;
     document.getElementById('s-matured').textContent  = s.matured;
     document.getElementById('s-complete').textContent = s.complete;
     document.getElementById('s-collected').textContent  = fmtAmt(s.paidAmount);
