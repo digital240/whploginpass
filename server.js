@@ -56,9 +56,43 @@ require('./routes/user-auth')(app, cache);
 require('./routes/user-profile')(app, cache);
 require('./routes/app-auth')(app, cache);
 
+// ── Payment reminders + pay-now routes ──────────────────
+require('./routes/payments-reminder')(app, cache);
+
 // ── Legacy WLP routes (keep working) ────────────────────
 require('./wlp-routes')(app, cache);
 
 // ── Start ────────────────────────────────────────────────
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`✅ WHP GMS running on port ${PORT}`));
+
+// ── Daily reminder cron (runs at 9am IST = 3:30am UTC) ──
+const cron = require('node-cron');
+const http = require('http');
+
+function triggerReminders() {
+  console.log('[GMS Cron] Running daily reminders...');
+  const options = {
+    hostname: 'localhost',
+    port: PORT,
+    path: '/api/gms/send-reminders',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-cron-secret': process.env.GMS_CRON_SECRET || 'whpcron2026'
+    }
+  };
+  const req = http.request(options, res => {
+    let body = '';
+    res.on('data', d => body += d);
+    res.on('end', () => {
+      try { console.log('[GMS Cron] Result:', JSON.parse(body)); }
+      catch(e) { console.log('[GMS Cron] Response:', body); }
+    });
+  });
+  req.on('error', e => console.error('[GMS Cron] Error:', e.message));
+  req.write(JSON.stringify({}));
+  req.end();
+}
+
+cron.schedule('30 3 * * *', triggerReminders, { timezone: 'Asia/Kolkata' });
