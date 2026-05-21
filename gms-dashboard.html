@@ -1635,10 +1635,10 @@ async function confirmDiscontinue() {
 // ── Draft Schemes ────────────────────────────────────
 async function loadDrafts() {
   try {
-    const res  = await fetch(API + '/api/gms-enrolments?status=Draft', { headers: { 'x-staff-token': _token } });
+    const res  = await fetch(API + '/api/gms-draft-enrolments', { headers: { 'x-staff-token': _token } });
     const data = await res.json();
     const tbody = document.getElementById('drafts-tbl-body');
-    const drafts = (data.rows || []).filter(r => r.status === 'Draft');
+    const drafts = data.rows || [];
 
     // Update badge
     const badge = document.getElementById('draft-badge');
