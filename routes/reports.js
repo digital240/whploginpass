@@ -7,7 +7,8 @@ module.exports = function(app) {
   // ── GET /api/gms-reports ─────────────────────────────
   app.get('/api/gms-reports', staffAuth, async (req, res) => {
     try {
-      const [total]        = await db.query('SELECT COUNT(*) as n FROM gms_enrolments');
+      const [total]        = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE status != 'Draft'");
+      const [draft]        = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Draft'");
       const [active]       = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Active'");
       const [matured]      = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Matured'");
       const [complete]     = await db.query("SELECT COUNT(*) as n FROM gms_enrolments WHERE status='Complete'");
@@ -29,7 +30,7 @@ module.exports = function(app) {
       return res.json({
         success: true,
         stats: {
-          total: total[0].n, active: active[0].n, matured: matured[0].n,
+          total: total[0].n, draft: draft[0].n, active: active[0].n, matured: matured[0].n,
           complete: complete[0].n, discontinued: discontinued[0].n,
           upi: upi[0].n, store: store[0].n,
           totalAmount: totalAmt[0].n || 0,
