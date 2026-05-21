@@ -1029,6 +1029,7 @@ function bootApp() {
     loadDiscRequests();
   } else {
     loadReports();
+    loadDrafts();
   }
 }
 
@@ -1638,15 +1639,21 @@ async function loadDrafts() {
     const res  = await fetch(API + '/api/gms-draft-enrolments', { headers: { 'x-staff-token': _token } });
     const data = await res.json();
     const tbody = document.getElementById('drafts-tbl-body');
+    if (!data.success) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-soft)">Could not load drafts.</td></tr>';
+      return;
+    }
     const drafts = data.rows || [];
 
-    // Update badge
+    // Update badge — admin only
     const badge = document.getElementById('draft-badge');
-    if (drafts.length > 0) { badge.textContent = drafts.length; badge.style.display = 'inline'; }
-    else badge.style.display = 'none';
+    if (badge) {
+      if (drafts.length > 0) { badge.textContent = drafts.length; badge.style.display = 'inline'; }
+      else badge.style.display = 'none';
+    }
 
     if (!drafts.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-soft)">No draft schemes. All UPI mandates are active!</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-soft)">${_role === 'branch' ? 'No pending UPI mandates for your branch.' : 'No draft schemes. All UPI mandates are active!'}</td></tr>`;
       return;
     }
 
