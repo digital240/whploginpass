@@ -393,6 +393,9 @@ tr:hover td{background:#fdf8f5;}
       <div class="nav-item admin-only" onclick="showPage('audit')">
         <span class="nav-icon">🔍</span> Audit Log
       </div>
+      <div class="nav-item admin-only" onclick="showPage('drafts')">
+        <span class="nav-icon">⏳</span> Draft Schemes <span id="draft-badge" style="background:var(--amber);color:#fff;border-radius:100px;font-size:9px;padding:1px 6px;margin-left:4px;display:none">0</span>
+      </div>
       <div class="nav-item admin-only" id="nav-disc-requests" onclick="showPage('disc-requests')">
         <span class="nav-icon">⚠️</span> Discontinue Requests <span id="disc-req-badge" style="background:#c0392b;color:#fff;border-radius:100px;font-size:9px;padding:1px 6px;margin-left:4px;display:none">0</span>
       </div>
@@ -411,7 +414,7 @@ tr:hover td{background:#fdf8f5;}
         <div class="stats-grid" id="stats-grid">
           <div class="stat-card"><div class="stat-num" id="s-total">—</div><div class="stat-label">Total Schemes</div></div>
           <div class="stat-card green"><div class="stat-num" id="s-active">—</div><div class="stat-label">Active</div></div>
-          <div class="stat-card amber"><div class="stat-num" id="s-draft">—</div><div class="stat-label">Draft (Pending UPI)</div></div>
+          <div class="stat-card amber" onclick="showPage('drafts')" style="cursor:pointer" title="Click to view draft schemes"><div class="stat-num" id="s-draft">—</div><div class="stat-label">Draft (Pending UPI)</div></div>
           <div class="stat-card amber"><div class="stat-num" id="s-matured">—</div><div class="stat-label">Matured</div></div>
           <div class="stat-card blue"><div class="stat-num" id="s-complete">—</div><div class="stat-label">Completed</div></div>
           <div class="stat-card green"><div class="stat-num" id="s-collected">—</div><div class="stat-label">Total Collected (incl. fees)</div></div>
@@ -544,6 +547,30 @@ tr:hover td{background:#fdf8f5;}
               <thead><tr><th>Phone</th><th>Name</th><th>Branch</th><th>Instalment</th><th>Step Reached</th><th>Date</th></tr></thead>
               <tbody id="half-tbl-body">
                 <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE: DRAFT SCHEMES (Admin only) ══ -->
+      <div class="page" id="page-drafts">
+        <div class="page-hdr-row">
+          <div class="page-hdr">
+            <div class="page-title">Draft Schemes</div>
+            <div class="page-sub">UPI mandate pending — not yet activated</div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="loadDrafts()">↻ Refresh</button>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr>
+                <th>Enrolment ID</th><th>Name</th><th>Mobile</th><th>Branch</th>
+                <th>Monthly</th><th>Redeemable</th><th>Started</th><th>Action</th>
+              </tr></thead>
+              <tbody id="drafts-tbl-body">
+                <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -998,6 +1025,7 @@ function bootApp() {
     loadHalfReg();
     loadAuditLog();
     loadReports();
+    loadDrafts();
     loadDiscRequests();
   } else {
     loadReports();
@@ -1602,6 +1630,40 @@ async function confirmDiscontinue() {
     btn.disabled = false; btn.textContent = 'Confirm Discontinue';
     showToast('Connection error.', 'error');
   }
+}
+
+// ── Draft Schemes ────────────────────────────────────
+async function loadDrafts() {
+  try {
+    const res  = await fetch(API + '/api/gms-enrolments?status=Draft', { headers: { 'x-staff-token': _token } });
+    const data = await res.json();
+    const tbody = document.getElementById('drafts-tbl-body');
+    const drafts = (data.rows || []).filter(r => r.status === 'Draft');
+
+    // Update badge
+    const badge = document.getElementById('draft-badge');
+    if (drafts.length > 0) { badge.textContent = drafts.length; badge.style.display = 'inline'; }
+    else badge.style.display = 'none';
+
+    if (!drafts.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-soft)">No draft schemes. All UPI mandates are active!</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = drafts.map(r => `
+      <tr>
+        <td class="td-id">${r.enrolment_id}</td>
+        <td class="td-name">${r.name}</td>
+        <td class="td-muted">+91 ${r.phone}</td>
+        <td><span class="badge badge-branch">${r.preferred_branch||'—'}</span></td>
+        <td class="td-amt">${fmtAmt(r.instalment_amt)}</td>
+        <td style="color:var(--amber);font-weight:600">${fmtAmt(r.total_redeemable)}</td>
+        <td class="td-muted">${fmtDate(r.enrolment_date||r.created_at)}</td>
+        <td>
+          <span style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600">⏳ Pending UPI</span>
+        </td>
+      </tr>`).join('');
+  } catch(e) { console.error('loadDrafts error:', e); }
 }
 
 // ── Discontinue Requests ──────────────────────────────
