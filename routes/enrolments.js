@@ -36,6 +36,18 @@ module.exports = function(app, cache) {
       const today = new Date().toISOString().split('T')[0];
       const mDate = toMysqlDate(maturity_date, tenure);
 
+      // ── Block if user already has 3+ pending drafts ──────────
+      const [draftCount] = await db.query(
+        "SELECT COUNT(*) as n FROM gms_enrolments WHERE phone=? AND status='Draft'",
+        [cp]
+      );
+      if (draftCount[0].n >= 3) {
+        return res.status(400).json({
+          success: false,
+          message: 'You already have 3 pending UPI payments. Please complete or delete them from your profile before enrolling in a new scheme.'
+        });
+      }
+
       // ── For UPI: check if draft already exists for this phone ──
       if (pay === 'upi') {
         const [existing] = await db.query(
@@ -230,6 +242,45 @@ module.exports = function(app, cache) {
     } catch(err) {
       console.error('[GMS] enrolment error:', err.message);
       return res.status(500).json({ success: false, message: 'Enrolment failed. Please try again.' });
+    }
+  });
+
+  // ── DELETE /api/gms-delete-draft ────────────────────
+  app.post('/api/gms-delete-draft', async (req, res) => {
+    try {
+      const { enrolmentId } = req.body;
+      const userToken = req.headers['x-user-token'] || req.body?.userToken;
+      if (!userToken) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const { getUserFromToken } = require('../helpers/auth');
+      const user = await getUserFromToken(userToken);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      // Verify it's their draft
+      const [rows] = await db.query(
+        "SELECT * FROM gms_enrolments WHERE enrolment_id=? AND status='Draft' AND (phone=? OR user_id=?)",
+        [enrolmentId, user.mobile, user.user_id]
+      );
+      if (!rows.length) return res.status(404).json({ success: false, message: 'Draft not found.' });
+
+      // Cancel Razorpay subscription if exists
+      if (rows[0].razorpay_subscription_id) {
+        try {
+          const Razorpay = require('razorpay');
+          const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+          await rzp.subscriptions.cancel(rows[0].razorpay_subscription_id, { cancel_at_cycle_end: false });
+        } catch(e) { console.log('[GMS] Razorpay cancel error (ok):', e.message); }
+      }
+
+      // Delete draft payments and enrolment
+      await db.query('DELETE FROM gms_payments WHERE enrolment_id=?', [enrolmentId]);
+      await db.query('DELETE FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+
+      console.log(`[GMS] Draft ${enrolmentId} deleted by user ${user.mobile}`);
+      return res.json({ success: true, message: 'Draft scheme deleted.' });
+    } catch(err) {
+      console.error('[GMS] delete-draft error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
     }
   });
 
