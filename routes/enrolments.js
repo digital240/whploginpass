@@ -43,7 +43,7 @@ module.exports = function(app, cache) {
            WHERE phone=? AND status='Draft' AND pay_method='UPI Auto-debit'
            AND instalment_amt=?
            ORDER BY created_at DESC LIMIT 1`,
-          [cp, instalment]
+          [cp, amt]
         );
         if (existing.length && existing[0].razorpay_subscription_id) {
           // Check if existing subscription is still usable
