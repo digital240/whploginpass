@@ -39,26 +39,37 @@ module.exports = function(app, cache) {
       // ── For UPI: check if draft already exists for this phone ──
       if (pay === 'upi') {
         const [existing] = await db.query(
-          `SELECT enrolment_id, razorpay_subscription_id FROM gms_enrolments 
+          `SELECT enrolment_id, razorpay_subscription_id, instalment_amt FROM gms_enrolments 
            WHERE phone=? AND status='Draft' AND pay_method='UPI Auto-debit'
+           AND instalment_amt=?
            ORDER BY created_at DESC LIMIT 1`,
-          [cp]
+          [cp, instalment]
         );
         if (existing.length && existing[0].razorpay_subscription_id) {
-          // Reuse existing draft + subscription
-          console.log(`[GMS] Reusing draft: ${existing[0].enrolment_id}`);
+          // Check if existing subscription is still usable
+          console.log(`[GMS] Checking draft: ${existing[0].enrolment_id}`);
           try {
             const Razorpay = require('razorpay');
             const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
             const sub = await rzp.subscriptions.fetch(existing[0].razorpay_subscription_id);
-            return res.json({
-              success:      true,
-              enrolmentId:  existing[0].enrolment_id,
-              message:      'Resuming your enrolment…',
-              razorpay:     { shortUrl: sub.short_url, subscriptionId: sub.id }
-            });
+            // Only reuse if subscription is still active/created/authenticated
+            const reusableStates = ['created', 'authenticated', 'active', 'pending'];
+            if (reusableStates.includes(sub.status)) {
+              console.log(`[GMS] Reusing draft ${existing[0].enrolment_id} with sub status: ${sub.status}`);
+              return res.json({
+                success:      true,
+                enrolmentId:  existing[0].enrolment_id,
+                message:      'Resuming your enrolment…',
+                razorpay:     { shortUrl: sub.short_url, subscriptionId: sub.id }
+              });
+            }
+            // Subscription expired/cancelled/failed — delete old draft and create fresh
+            console.log(`[GMS] Draft sub status ${sub.status} — deleting old draft ${existing[0].enrolment_id}`);
+            await db.query("DELETE FROM gms_enrolments WHERE enrolment_id=?", [existing[0].enrolment_id]);
+            await db.query("DELETE FROM gms_payments WHERE enrolment_id=?", [existing[0].enrolment_id]);
           } catch(e) {
             // If fetch fails, delete old draft and create new
+            console.log(`[GMS] Could not fetch sub — deleting draft ${existing[0].enrolment_id}:`, e.message);
             await db.query("DELETE FROM gms_enrolments WHERE enrolment_id=?", [existing[0].enrolment_id]);
           }
         }
