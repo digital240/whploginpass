@@ -222,6 +222,24 @@ module.exports = function(app, cache) {
     }
   });
 
+  // ── GET /api/gms-draft-enrolments ───────────────────
+  app.get('/api/gms-draft-enrolments', staffAuth, async (req, res) => {
+    try {
+      let query = "SELECT * FROM gms_enrolments WHERE status='Draft'";
+      const vals = [];
+      // Branch can only see their own drafts
+      if (req.staff.role === 'branch') {
+        query += ' AND preferred_branch=?';
+        vals.push(req.staff.branch);
+      }
+      query += ' ORDER BY created_at DESC';
+      const [rows] = await db.query(query, vals);
+      return res.json({ success: true, rows });
+    } catch(err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   // ── GET /api/gms-enrolments ──────────────────────────
   app.get('/api/gms-enrolments', staffAuth, async (req, res) => {
     try {
