@@ -975,10 +975,8 @@ function bootApp() {
   document.getElementById('hdr-user-label').textContent = _uname;
 
   // Show/hide admin-only nav items + filter
-  // Show/hide admin-only nav items + filter
   document.querySelectorAll('.admin-only').forEach(el => {
     if (_role === 'admin') {
-      // Use 'flex' for the nav items to override the CSS, and 'block' for everything else
       el.style.display = el.classList.contains('nav-item') ? 'flex' : 'block';
     } else {
       el.style.display = 'none';
@@ -1203,9 +1201,9 @@ async function openDetail(enrolId) {
             </div>
             <p style="font-size:11px;color:var(--text-soft);margin-top:6px">Direct discontinue takes effect immediately. Or manage via request flow.</p>
           ` : `
-           <button class="btn btn-sm" style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3)" onclick="_openReqDisc('${enrolId}')">
-  📋 Request Discontinue
-</button>
+            <button class="btn btn-sm" style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3)" onclick="_openReqDisc('${enrolId}')">
+              📋 Request Discontinue
+            </button>
             <p style="font-size:11px;color:var(--text-soft);margin-top:6px">Submit a discontinue request for admin approval.</p>
           `}
         </div>` : ''}
@@ -1621,6 +1619,10 @@ async function loadDiscRequests() {
     if (pending > 0) { badge.textContent = pending; badge.style.display = 'inline'; }
     else badge.style.display = 'none';
 
+    // Store requests for safe lookup by ID
+    window._discRequests = {};
+    data.rows.forEach(r => { window._discRequests[r.id] = r; });
+
     tbody.innerHTML = data.rows.map(r => `
       <tr>
         <td class="td-id">#${r.id}</td>
@@ -1631,7 +1633,7 @@ async function loadDiscRequests() {
         <td style="color:var(--green);font-weight:600">₹${Number(r.refund_amount).toLocaleString('en-IN')}</td>
         <td><span class="badge ${r.status==='Pending'?'badge-matured':r.status==='Approved'?'badge-active':'badge-discontinued'}">${r.status}</span></td>
         <td class="td-muted">${fmtDate(r.created_at)}</td>
-        <td>${r.status === 'Pending' ? `<button class="btn btn-outline btn-sm" onclick="openReviewModal(${r.id},'${r.enrolment_id}',${JSON.stringify(r.name)},${JSON.stringify(r.phone)},${JSON.stringify(r.reason)},'${r.refund_amount}','${r.branch}','${r.payments_made}','${r.instalment_amt}')">Review →</button>` : `<span style="font-size:11px;color:var(--text-soft)">Reviewed by ${r.reviewed_by||'—'}</span>`}</td>
+        <td>${r.status === 'Pending' ? `<button class="btn btn-outline btn-sm" onclick="_openReviewModal(${r.id})">Review →</button>` : `<span style="font-size:11px;color:var(--text-soft)">Reviewed by ${r.reviewed_by||'—'}</span>`}</td>
       </tr>`).join('');
   } catch(e) { console.error('loadDiscRequests error:', e); }
 }
@@ -1695,6 +1697,13 @@ async function submitDiscontinueRequest() {
     btn.disabled = false; btn.textContent = 'Submit Request →';
     showToast('Connection error.', 'error');
   }
+}
+
+// Safe wrapper — looks up request data by ID, no inline data passing
+function _openReviewModal(id) {
+  const r = window._discRequests && window._discRequests[id];
+  if (!r) { showToast('Request data not found. Refresh and try again.', 'error'); return; }
+  openReviewModal(r.id, r.enrolment_id, r.name, r.phone, r.reason, r.refund_amount, r.branch, r.payments_made, r.instalment_amt);
 }
 
 function openReviewModal(id, enrolId, name, phone, reason, refund, branch, paid, instalment) {
