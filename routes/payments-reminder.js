@@ -336,5 +336,76 @@ module.exports = function(app, cache) {
     }
   });
 
+  // ── POST /api/gms/switch-to-store ───────────────────
+  // Customer cancels UPI autopay and switches to store payment
+  app.post('/api/gms/switch-to-store', async (req, res) => {
+    try {
+      const userToken = req.headers['x-user-token'];
+      if (!userToken) return res.status(401).json({ success: false, message: 'Not logged in.' });
+      const { getUserFromToken } = require('../helpers/auth');
+      const user = await getUserFromToken(userToken);
+      if (!user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+
+      const { enrolmentId } = req.body;
+      if (!enrolmentId) return res.status(400).json({ success: false, message: 'enrolmentId required.' });
+
+      const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+      if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
+      const enrol = rows[0];
+
+      // Verify ownership
+      if (enrol.phone !== user.mobile && enrol.user_id !== user.user_id) {
+        return res.status(403).json({ success: false, message: 'Not your scheme.' });
+      }
+
+      if (enrol.pay_method !== 'UPI Auto-debit') {
+        return res.status(400).json({ success: false, message: 'This scheme is not on UPI autopay.' });
+      }
+
+      if (enrol.status !== 'Active') {
+        return res.status(400).json({ success: false, message: 'Can only switch active schemes.' });
+      }
+
+      // Cancel Razorpay subscription
+      if (enrol.razorpay_subscription_id) {
+        try {
+          await rzp.subscriptions.cancel(enrol.razorpay_subscription_id, { cancel_at_cycle_end: false });
+          console.log(`[GMS] Cancelled subscription ${enrol.razorpay_subscription_id}`);
+        } catch(e) {
+          console.log('[GMS] Razorpay cancel error (continuing):', e.message);
+        }
+      }
+
+      // Update enrolment — switch to store payment
+      await db.query(
+        `UPDATE gms_enrolments SET 
+         pay_method='Pay at Store',
+         razorpay_sub_status='cancelled'
+         WHERE enrolment_id=?`,
+        [enrolmentId]
+      );
+
+      // Audit log
+      await db.query(
+        'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+        [enrolmentId, 'Switched to Store Payment', user.mobile, enrol.preferred_branch || 'Online',
+         `UPI subscription ${enrol.razorpay_subscription_id || 'N/A'} cancelled by customer`]
+      );
+
+      // SMS to customer
+      await sendSms(enrol.phone,
+        `Dear Customer, your WHP GMS scheme ${enrolmentId} has been switched to store payment. Please visit your nearest WHP branch to make monthly payments. - WHP Jewellers`
+      );
+
+      return res.json({
+        success: true,
+        message: 'Switched to store payment. Please visit your branch for future payments.'
+      });
+    } catch(err) {
+      console.error('[GMS] switch-to-store error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   console.log('[GMS] Payment reminder routes loaded');
 };
