@@ -226,14 +226,7 @@ module.exports = function(app, cache) {
 
   // ── POST /api/gms-payment-webhook ─────────────────────
   // Razorpay webhook — raw body needed for signature verification
-  app.post('/api/gms-payment-webhook',
-    (req, res, next) => {
-      // Collect raw body for signature verification
-      let rawBody = '';
-      req.on('data', chunk => { rawBody += chunk; });
-      req.on('end', () => { req.rawBody = rawBody; next(); });
-    },
-    async (req, res) => {
+  app.post('/api/gms-payment-webhook', async (req, res) => {
       try {
         const signature = req.headers['x-razorpay-signature'];
         // Allow test bypass with special header in non-production
