@@ -191,8 +191,9 @@ module.exports = function(app, cache) {
         return res.status(403).json({ success: false, message: 'Not your scheme.' });
       }
 
-      if (enrol.pay_method === 'UPI Auto-debit') {
-        return res.status(400).json({ success: false, message: 'Autopay already set up.' });
+      // Only block if subscription is actually active
+      if (enrol.pay_method === 'UPI Auto-debit' && enrol.razorpay_sub_status === 'active') {
+        return res.status(400).json({ success: false, message: 'Autopay is already active for this scheme.' });
       }
 
       // Check current month status
@@ -203,6 +204,16 @@ module.exports = function(app, cache) {
       const remainingMonths = parseInt(enrol.payments_pending) || 0;
       if (remainingMonths === 0) {
         return res.status(400).json({ success: false, message: 'No remaining payments — scheme is complete.' });
+      }
+
+      // Cancel existing incomplete subscription if any
+      if (enrol.razorpay_subscription_id && enrol.razorpay_sub_status !== 'active') {
+        try {
+          await rzp.subscriptions.cancel(enrol.razorpay_subscription_id, { cancel_at_cycle_end: false });
+          console.log(`[GMS] Cancelled old incomplete subscription ${enrol.razorpay_subscription_id}`);
+        } catch(e) {
+          console.log('[GMS] Old subscription cancel (ok):', e.message);
+        }
       }
 
       // Create Razorpay plan
