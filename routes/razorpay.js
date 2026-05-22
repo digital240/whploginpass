@@ -253,7 +253,7 @@ module.exports = function(app, cache) {
             if (authRows.length) {
               const authEnrol = authRows[0];
               await db.query(
-                `UPDATE gms_enrolments SET razorpay_sub_status='authenticated', status='Active'
+                `UPDATE gms_enrolments SET razorpay_sub_status='active', status='Active'
                  WHERE razorpay_subscription_id=?`, [subId]
               );
               // Link to user account by phone if not already linked
