@@ -36,6 +36,22 @@ module.exports = function(app, cache) {
       const today = new Date().toISOString().split('T')[0];
       const mDate = toMysqlDate(maturity_date, tenure);
 
+      // ── Block duplicate active enrolment (same phone + amount + branch) ──
+      const [activeCheck] = await db.query(
+        `SELECT enrolment_id FROM gms_enrolments 
+         WHERE phone=? AND status='Active' AND instalment_amt=? 
+         AND preferred_branch=? AND created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)`,
+        [cp, amt, branch]
+      );
+      if (activeCheck.length) {
+        return res.status(400).json({
+          success: false,
+          message: 'You just enrolled in this scheme! Check your profile.',
+          enrolmentId: activeCheck[0].enrolment_id,
+          duplicate: true
+        });
+      }
+
       // ── Block if user already has 3+ pending drafts ──────────
       const [draftCount] = await db.query(
         "SELECT COUNT(*) as n FROM gms_enrolments WHERE phone=? AND status='Draft'",
@@ -172,7 +188,7 @@ module.exports = function(app, cache) {
 
         // Create plan
         const plan = await rzp.plans.create({
-          period: 'monthly', interval: 1,
+          period: process.env.GMS_PLAN_PERIOD || 'monthly', interval: 1,
           item: {
             name:        `WHP GMS - ${enrolmentId}`,
             amount:      amountPaise,
