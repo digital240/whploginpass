@@ -209,7 +209,7 @@ module.exports = function(app, cache) {
 
       // Create plan
       const plan = await rzp.plans.create({
-        period: 'monthly', interval: 1,
+        period: process.env.GMS_PLAN_PERIOD || 'monthly', interval: 1,
         item: {
           name:     `WHP GMS ${enrolmentId}`,
           amount:   Math.round(parseFloat(enrol.instalment_amt) * 100),
@@ -299,7 +299,7 @@ module.exports = function(app, cache) {
 
       // Create Razorpay plan
       const plan = await rzp.plans.create({
-        period:   'monthly',
+        period:   process.env.GMS_PLAN_PERIOD || 'monthly',
         interval: 1,
         item: {
           name:     `WHP GMS ${enrolmentId}`,
@@ -495,6 +495,47 @@ module.exports = function(app, cache) {
       });
     } catch(err) {
       console.error('[GMS] switch-to-store error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── POST /api/gms/activate-scheme ───────────────────
+  // Called after customer completes UPI mandate — activates scheme immediately
+  app.post('/api/gms/activate-scheme', async (req, res) => {
+    try {
+      const { subscriptionId, enrolmentId } = req.body;
+      if (!enrolmentId && !subscriptionId) return res.status(400).json({ success: false });
+
+      // Find enrolment
+      let query = 'SELECT * FROM gms_enrolments WHERE ';
+      let param;
+      if (enrolmentId) { query += 'enrolment_id=?'; param = enrolmentId; }
+      else { query += 'razorpay_subscription_id=?'; param = subscriptionId; }
+
+      const [rows] = await db.query(query, [param]);
+      if (!rows.length) return res.status(404).json({ success: false });
+      const enrol = rows[0];
+
+      // Only activate if Draft or authenticated
+      if (enrol.status === 'Active') return res.json({ success: true, message: 'Already active.' });
+
+      await db.query(
+        `UPDATE gms_enrolments SET status='Active', razorpay_sub_status='active'
+         WHERE enrolment_id=?`,
+        [enrol.enrolment_id]
+      );
+
+      // Audit
+      await db.query(
+        'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+        [enrol.enrolment_id, 'Scheme Activated', 'Customer', enrol.preferred_branch || 'Online',
+         'Activated after UPI mandate completion']
+      );
+
+      console.log(`[GMS] Scheme activated: ${enrol.enrolment_id}`);
+      return res.json({ success: true, message: 'Scheme activated!' });
+    } catch(err) {
+      console.error('[GMS] activate-scheme error:', err.message);
       return res.status(500).json({ success: false, message: err.message });
     }
   });
