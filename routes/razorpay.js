@@ -246,11 +246,42 @@ module.exports = function(app, cache) {
           case 'subscription.authenticated': {
             const subId = payload.subscription?.entity?.id;
             if (!subId) break;
-            await db.query(
-              `UPDATE gms_enrolments SET razorpay_sub_status='authenticated' 
-               WHERE razorpay_subscription_id=?`,
-              [subId]
+            // Activate scheme immediately on mandate approval — don't wait for charged event
+            const [authRows] = await db.query(
+              'SELECT * FROM gms_enrolments WHERE razorpay_subscription_id=?', [subId]
             );
+            if (authRows.length) {
+              const authEnrol = authRows[0];
+              await db.query(
+                `UPDATE gms_enrolments SET razorpay_sub_status='authenticated', status='Active'
+                 WHERE razorpay_subscription_id=?`, [subId]
+              );
+              // Link to user account by phone if not already linked
+              if (!authEnrol.user_id) {
+                const [userRows] = await db.query(
+                  'SELECT user_id FROM gms_users WHERE mobile=? LIMIT 1',
+                  [authEnrol.phone]
+                );
+                if (userRows.length) {
+                  await db.query(
+                    'UPDATE gms_enrolments SET user_id=? WHERE enrolment_id=?',
+                    [userRows[0].user_id, authEnrol.enrolment_id]
+                  );
+                  console.log(`[Webhook] Linked enrolment ${authEnrol.enrolment_id} to user ${userRows[0].user_id}`);
+                }
+              }
+              await db.query(
+                'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+                [authEnrol.enrolment_id, 'Scheme Activated via Mandate', 'Razorpay',
+                 authEnrol.preferred_branch || 'Online', `Subscription: ${subId}`]
+              );
+              console.log(`[Webhook] Scheme activated on mandate: ${authEnrol.enrolment_id}`);
+            } else {
+              await db.query(
+                `UPDATE gms_enrolments SET razorpay_sub_status='authenticated'
+                 WHERE razorpay_subscription_id=?`, [subId]
+              );
+            }
             console.log(`[Webhook] Subscription authenticated: ${subId}`);
             break;
           }
