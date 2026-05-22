@@ -171,6 +171,87 @@ module.exports = function(app, cache) {
     }
   });
 
+  // ── POST /api/gms/setup-autopay-link ───────────────────
+  // Setup autopay from SMS pay link — no login needed, uses token
+  app.post('/api/gms/setup-autopay-link', async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ success: false, message: 'Token required.' });
+
+      const cached = cache.get(`paylink:${token}`);
+      if (!cached) return res.status(404).json({ success: false, message: 'Payment link expired.' });
+
+      const { enrolmentId, monthNum } = cached;
+      const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+      if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
+      const enrol = rows[0];
+
+      // Only block if already truly active
+      if (enrol.pay_method === 'UPI Auto-debit' && enrol.razorpay_sub_status === 'active') {
+        return res.status(400).json({ success: false, message: 'Autopay is already active.' });
+      }
+
+      // Cancel existing incomplete subscription if any
+      if (enrol.razorpay_subscription_id && enrol.razorpay_sub_status !== 'active') {
+        try {
+          await rzp.subscriptions.cancel(enrol.razorpay_subscription_id, { cancel_at_cycle_end: false });
+        } catch(e) { console.log('[GMS] Old sub cancel (ok):', e.message); }
+      }
+
+      const remainingMonths = parseInt(enrol.payments_pending) || 0;
+      if (remainingMonths === 0) {
+        return res.status(400).json({ success: false, message: 'No remaining payments.' });
+      }
+
+      // Check if current month pending — charge immediately
+      const pendingPay = await getCurrentPendingMonth(enrolmentId);
+      const chargeNow  = pendingPay !== null;
+
+      // Create plan
+      const plan = await rzp.plans.create({
+        period: 'monthly', interval: 1,
+        item: {
+          name:     `WHP GMS ${enrolmentId}`,
+          amount:   Math.round(parseFloat(enrol.instalment_amt) * 100),
+          currency: 'INR'
+        }
+      });
+
+      const startAt = chargeNow
+        ? Math.floor(Date.now() / 1000) + 60
+        : Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60);
+
+      const subscription = await rzp.subscriptions.create({
+        plan_id: plan.id, total_count: remainingMonths, quantity: 1,
+        start_at: startAt, customer_notify: 1,
+        notes: { enrolmentId, type: 'gms_autopay_smslink' }
+      });
+
+      await db.query(
+        `UPDATE gms_enrolments SET pay_method='UPI Auto-debit',
+         razorpay_plan_id=?, razorpay_subscription_id=?, razorpay_sub_status='created'
+         WHERE enrolment_id=?`,
+        [plan.id, subscription.id, enrolmentId]
+      );
+
+      await db.query(
+        'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+        [enrolmentId, 'Autopay Setup via SMS Link', enrol.phone, enrol.preferred_branch || 'Online',
+         `Sub: ${subscription.id}. ChargeNow: ${chargeNow}`]
+      );
+
+      return res.json({
+        success: true,
+        subscriptionId: subscription.id,
+        chargeNow,
+        message: 'Autopay setup initiated.'
+      });
+    } catch(err) {
+      console.error('[GMS] setup-autopay-link error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   // ── POST /api/gms/setup-autopay ──────────────────────
   // Customer sets up UPI subscription for remaining months
   app.post('/api/gms/setup-autopay', async (req, res) => {
