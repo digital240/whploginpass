@@ -202,5 +202,63 @@ module.exports = function(app, cache) {
     } catch(err) { return res.json({ success: true }); }
   });
 
+  // ── POST /api/gms/auto-login-after-enrol ────────────
+  // Called after enrolment — phone already OTP verified, auto login or create account
+  app.post('/api/gms/auto-login-after-enrol', async (req, res) => {
+    try {
+      const { phone, name, email, enrolmentId } = req.body;
+      const cp = cleanPhone(phone);
+      if (!cp) return res.status(400).json({ success: false, message: 'Invalid phone.' });
+
+      // Check if user exists
+      const [rows] = await db.query('SELECT * FROM gms_users WHERE mobile=?', [cp]);
+
+      let userId;
+      if (rows.length) {
+        // Existing user — just login
+        userId = rows[0].user_id;
+        console.log(`[GMS] Auto-login existing user: ${cp}`);
+      } else {
+        // New user — create account from enrolment data
+        const nameParts = (name || '').trim().split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName  = nameParts.slice(1).join(' ') || '';
+        const [result] = await db.query(
+          'INSERT INTO gms_users (first_name, last_name, mobile, email) VALUES (?,?,?,?)',
+          [firstName, lastName, cp, email || '']
+        );
+        userId = result.insertId;
+        console.log(`[GMS] Auto-created user for: ${cp}`);
+      }
+
+      // Link enrolment to user
+      if (enrolmentId) {
+        await db.query(
+          'UPDATE gms_enrolments SET user_id=? WHERE enrolment_id=? AND (user_id IS NULL OR user_id=0)',
+          [userId, enrolmentId]
+        );
+      }
+
+      // Create session token
+      const userToken = await createUserSession(userId);
+      const [userRows] = await db.query('SELECT * FROM gms_users WHERE user_id=?', [userId]);
+
+      return res.json({
+        success: true,
+        token: userToken,
+        user: {
+          user_id:    userRows[0].user_id,
+          first_name: userRows[0].first_name,
+          last_name:  userRows[0].last_name,
+          mobile:     userRows[0].mobile,
+          email:      userRows[0].email
+        }
+      });
+    } catch(err) {
+      console.error('[GMS] auto-login-after-enrol error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   console.log('[GMS] User auth routes loaded');
 };
