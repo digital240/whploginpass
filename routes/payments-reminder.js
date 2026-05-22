@@ -517,13 +517,24 @@ module.exports = function(app, cache) {
       const enrol = rows[0];
 
       // Only activate if Draft or authenticated
-      if (enrol.status === 'Active') return res.json({ success: true, message: 'Already active.' });
+      if (enrol.status === 'Active') return res.json({ success: true, already: true, message: 'Already active.' });
 
       await db.query(
         `UPDATE gms_enrolments SET status='Active', razorpay_sub_status='active'
          WHERE enrolment_id=?`,
         [enrol.enrolment_id]
       );
+
+      // Link user account by phone if not linked
+      if (!enrol.user_id) {
+        const [userRows] = await db.query(
+          'SELECT user_id FROM gms_users WHERE mobile=? LIMIT 1', [enrol.phone]
+        );
+        if (userRows.length) {
+          await db.query('UPDATE gms_enrolments SET user_id=? WHERE enrolment_id=?',
+            [userRows[0].user_id, enrol.enrolment_id]);
+        }
+      }
 
       // Audit
       await db.query(
