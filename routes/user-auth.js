@@ -96,8 +96,8 @@ module.exports = function(app, cache) {
       }
 
       // OTP correct
-      cache.set(`gms_otp:${mobile}`, { otp, verified: true }, 300);
-      cache.set(`otp:${mobile}`,     { phone: mobile, verified: true }, 300);
+      cache.set(`gms_otp:${mobile}`, { otp, verified: true }, 1800);
+      cache.set(`otp:${mobile}`,     { phone: mobile, verified: true }, 1800);
 
       // Step 1: Check gms_users
       const [rows] = await db.query('SELECT * FROM gms_users WHERE mobile=?', [mobile]);
@@ -169,7 +169,7 @@ module.exports = function(app, cache) {
         }).catch(e => console.error('[GMS] Shopify push error:', e.message));
 
       const userToken = await createUserSession(result.insertId);
-      cache.set(`otp:${mobile}`, { phone: mobile, verified: true }, 300);
+      cache.set(`otp:${mobile}`, { phone: mobile, verified: true }, 1800);
       console.log(`[GMS] Registered: ${firstName} (${mobile})`);
       return res.json({
         success: true, userToken,
