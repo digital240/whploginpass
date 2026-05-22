@@ -28,13 +28,21 @@ app.use(function(req, res, next) {
 app.use(helmet({ contentSecurityPolicy: false }));
 
 // !! Webhook raw body — MUST be before express.json()
+// Reads raw body first, then parses JSON manually so express.json() is skipped
 app.use('/api/gms-payment-webhook', (req, res, next) => {
   let rawBody = '';
   req.on('data', chunk => { rawBody += chunk; });
-  req.on('end', () => { req.rawBody = rawBody; next(); });
+  req.on('end', () => {
+    req.rawBody = rawBody;
+    try { req.body = JSON.parse(rawBody); } catch(e) { req.body = {}; }
+    next();
+  });
 });
 
-app.use(express.json({ limit: '10mb' }));
+app.use((req, res, next) => {
+  if (req.path === '/api/gms-payment-webhook') return next();
+  express.json({ limit: '10mb' })(req, res, next);
+});
 
 // ── Rate limiter (OTP endpoints) ─────────────────────────
 const otpLimiter = rateLimit({
