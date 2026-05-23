@@ -44,11 +44,11 @@ module.exports = function(app, cache) {
         [cp, amt, branch]
       );
       if (activeCheck.length) {
-        return res.status(400).json({
-          success: false,
-          message: 'You just enrolled in this scheme! Check your profile.',
-          enrolmentId: activeCheck[0].enrolment_id,
-          duplicate: true
+        return res.json({
+          success: true,
+          duplicate: true,
+          message: 'You just enrolled in this scheme!',
+          enrolmentId: activeCheck[0].enrolment_id
         });
       }
 
