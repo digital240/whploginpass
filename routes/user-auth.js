@@ -152,11 +152,27 @@ module.exports = function(app, cache) {
       const [existing] = await db.query('SELECT user_id FROM gms_users WHERE mobile=?', [mobile]);
       if (existing.length) return res.status(400).json({ success: false, message: 'Mobile already registered. Please login.' });
 
-      // Save to gms_users
-      const [result] = await db.query(
-        'INSERT INTO gms_users (first_name, last_name, mobile, email) VALUES (?,?,?,?)',
-        [firstName.trim(), (lastName||'').trim(), mobile, (email||'').trim()]
-      );
+    // Save to gms_users
+const [result] = await db.query(
+  'INSERT INTO gms_users (first_name, last_name, mobile, email) VALUES (?,?,?,?)',
+  [firstName.trim(), (lastName||'').trim(), mobile, (email||'').trim()]
+);
+
+// ── Save address if provided ───────────────────────
+const { address1, address2, city, state, pincode } = req.body;
+if (address1 && city && pincode) {
+  try {
+    await db.query(
+      'INSERT INTO gms_user_addresses (user_id, label, address1, address2, city, state, pincode, is_default) VALUES (?,?,?,?,?,?,?,1)',
+      [result.insertId, 'Home', address1.trim(), (address2||'').trim(), city.trim(), (state||'').trim(), pincode.trim()]
+    );
+    console.log(`[GMS] Address saved for new user ${result.insertId}`);
+  } catch(e) {
+    console.error('[GMS] Address save (non-critical):', e.message);
+  }
+}
+
+ 
 
       // Push to Shopify in background (non-blocking)
       createShopifyCustomer({ first_name: firstName.trim(), last_name: (lastName||'').trim(), mobile, email: (email||'').trim() })
