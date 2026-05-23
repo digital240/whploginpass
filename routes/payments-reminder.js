@@ -362,9 +362,13 @@ cache.set(`paylink:${token}`, {
 
 const BASE_URL = process.env.GMS_BASE_URL || 'https://gms.whpjewellers.com';
 const payUrl   = `${BASE_URL}/pay/${token}`;
-        const dueStr   = isDueToday
-          ? today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-          : in5Days.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+       function fmtDue(d) {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+const dueStr = isDueToday ? fmtDue(today) : fmtDue(in5Days);
 
         await sendSms(
           enrol.phone,
