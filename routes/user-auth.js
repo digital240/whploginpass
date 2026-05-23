@@ -245,6 +245,20 @@ module.exports = function(app, cache) {
         );
       }
 
+      // Save address to profile if provided and not already saved
+      const { address1, address2, city, state, pincode } = req.body;
+      if (address1 && city && pincode) {
+        const [existingAddrs] = await db.query(
+          'SELECT COUNT(*) as cnt FROM gms_user_addresses WHERE user_id=?', [userId]
+        );
+        if (existingAddrs[0].cnt === 0) {
+          await db.query(
+            'INSERT INTO gms_user_addresses (user_id, label, address1, address2, city, state, pincode, is_default) VALUES (?,?,?,?,?,?,?,1)',
+            [userId, 'Home', address1, address2||'', city, state||'', pincode]
+          );
+        }
+      }
+
       // Create session token
       const userToken = await createUserSession(userId);
       const [userRows] = await db.query('SELECT * FROM gms_users WHERE user_id=?', [userId]);
