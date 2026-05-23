@@ -186,9 +186,15 @@ module.exports = function(app, cache) {
     try {
       const user = await getUserFromToken(req.headers['x-user-token']);
       if (!user) return res.json({ loggedIn: false });
+      // Also return default address for form pre-fill
+      const [addrs] = await db.query(
+        'SELECT * FROM gms_user_addresses WHERE user_id=? ORDER BY is_default DESC LIMIT 1',
+        [user.user_id]
+      );
       return res.json({
         loggedIn: true,
-        user: { user_id: user.user_id, first_name: user.first_name, last_name: user.last_name, mobile: user.mobile, email: user.email }
+        user: { user_id: user.user_id, first_name: user.first_name, last_name: user.last_name, mobile: user.mobile, email: user.email },
+        address: addrs[0] || null
       });
     } catch(err) { return res.json({ loggedIn: false }); }
   });
