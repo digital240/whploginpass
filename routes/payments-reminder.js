@@ -353,14 +353,15 @@ module.exports = function(app, cache) {
         const pendingPay = await getCurrentPendingMonth(enrol.enrolment_id);
         if (!pendingPay) continue;
 
-        const token = generatePayToken(enrol.enrolment_id, pendingPay.month_num);
-        cache.set(`paylink:${token}`, {
-          enrolmentId: enrol.enrolment_id,
-          monthNum:    pendingPay.month_num
-        }, 7 * 24 * 60 * 60);
+       // REPLACE WITH:
+const token = generatePayToken(enrol.enrolment_id, pendingPay.month_num).slice(0, 16);
+cache.set(`paylink:${token}`, {
+  enrolmentId: enrol.enrolment_id,
+  monthNum:    pendingPay.month_num
+}, 7 * 24 * 60 * 60);
 
-        const BASE_URL = process.env.GMS_BASE_URL || 'https://gms.whpjewellers.com';
-        const payUrl   = `${BASE_URL}/pay?t=${token}`;
+const BASE_URL = process.env.GMS_BASE_URL || 'https://gms.whpjewellers.com';
+const payUrl   = `${BASE_URL}/pay/${token}`;
         const dueStr   = isDueToday
           ? today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
           : in5Days.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
