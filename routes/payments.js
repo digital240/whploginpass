@@ -2,15 +2,21 @@
 const db               = require('../db');
 const NodeCache        = require('node-cache');
 const { staffAuth }    = require('../helpers/auth');
-const { sendSms }      = require('../helpers/sms');
+const { sendSms, SMS } = require('../helpers/sms');
 const { generateOtp }  = require('../helpers/utils');
 
 const payOtpCache = new NodeCache({ stdTTL: 300 }); // 5 min OTP expiry
 
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function getMonthName(enrolDate, monthNum) {
+  const start = new Date(enrolDate);
+  const d = new Date(start.getFullYear(), start.getMonth() + (monthNum - 1), 1);
+  return MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear();
+}
+
 module.exports = function(app) {
 
   // ── POST /api/gms-send-pay-otp ───────────────────────
-  // Branch requests OTP before marking month paid
   app.post('/api/gms-send-pay-otp', staffAuth, async (req, res) => {
     try {
       const { enrolmentId, monthNum } = req.body;
@@ -20,27 +26,22 @@ module.exports = function(app) {
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
 
-      // Branch permission check
       if (req.staff.role === 'branch' && enrol.preferred_branch !== req.staff.branch) {
         return res.status(403).json({ success: false, message: `You can only mark payments for ${req.staff.branch} branch.` });
       }
 
-      // Check month is actually pending
       const [payRows] = await db.query(
         "SELECT * FROM gms_payments WHERE enrolment_id=? AND month_num=? AND status='Pending'",
         [enrolmentId, monthNum]
       );
       if (!payRows.length) return res.status(400).json({ success: false, message: `Month ${monthNum} is not pending.` });
 
-      // Generate OTP
       const otp = generateOtp();
       const key = `pay_otp:${enrolmentId}:${monthNum}`;
       payOtpCache.set(key, { otp, branch: req.staff.branch, by: req.staff.username });
 
-      // Send to customer
-      await sendSms(enrol.phone,
-        `Dear Customer, your WHP GMS payment OTP for scheme ${enrolmentId} Month ${monthNum} is: ${otp}. Valid for 5 minutes. Share with branch staff only. - WHP Jewellers`
-      );
+      // ── Use 'otp' template — exact DLT approved text
+      await sendSms(enrol.phone, SMS.otp(otp), 'otp');
 
       console.log(`[GMS] Pay OTP sent for ${enrolmentId} M${monthNum} to ${enrol.phone}`);
       return res.json({ success: true, message: `OTP sent to customer's mobile ending ${enrol.phone.slice(-4)}` });
@@ -51,7 +52,6 @@ module.exports = function(app) {
   });
 
   // ── POST /api/gms-verify-pay-otp ─────────────────────
-  // Verify OTP then mark month as paid
   app.post('/api/gms-verify-pay-otp', staffAuth, async (req, res) => {
     try {
       const { enrolmentId, monthNum, otp, lateFee, notes } = req.body;
@@ -63,10 +63,8 @@ module.exports = function(app) {
       if (!stored) return res.status(400).json({ success: false, message: 'OTP expired or not requested. Please resend OTP.' });
       if (String(stored.otp) !== String(otp)) return res.status(400).json({ success: false, message: 'Incorrect OTP. Please try again.' });
 
-      // OTP verified — delete it
       payOtpCache.del(key);
 
-      // Now mark as paid (same logic as mark-paid)
       const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
       if (!enrolRows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = enrolRows[0];
@@ -113,13 +111,14 @@ module.exports = function(app) {
          `OTP verified. Late fee: ${lateFee||0}. Notes: ${notes||''}`]
       );
 
-      const msg = allDone
-        ? `Dear Customer, your WHP GMS scheme ${enrolmentId} is now MATURED! WHP team will contact you shortly. - WHP Jewellers`
-        : `Dear Customer, month ${monthNum} payment of Rs.${enrol.instalment_amt} recorded for WHP GMS scheme ${enrolmentId}. ${Math.max(0,pending)} payment(s) remaining. - WHP Jewellers`;
-      await sendSms(enrol.phone, msg);
+      if (allDone) {
+        await sendSms(enrol.phone, SMS.matured(enrolmentId, enrol.total_redeemable), 'matured');
+      } else {
+        await sendSms(enrol.phone, SMS.autoDebitSuccess(enrol.instalment_amt, enrolmentId, monthNum, Math.max(0, pending)), 'autoDebitSuccess');
+      }
 
       return res.json({
-        success: true, made, pending: Math.max(0,pending), allDone, status,
+        success: true, made, pending: Math.max(0, pending), allDone, status,
         message: allDone ? 'Scheme matured!' : `Month ${monthNum} marked paid successfully!`
       });
     } catch(err) {
@@ -138,7 +137,6 @@ module.exports = function(app) {
       if (!enrolRows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = enrolRows[0];
 
-      // Branch managers can only mark their own branch
       if (req.staff.role === 'branch' && enrol.preferred_branch !== req.staff.branch) {
         return res.status(403).json({ success: false, message: `You can only mark payments for ${req.staff.branch} branch.` });
       }
@@ -177,15 +175,20 @@ module.exports = function(app) {
 
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
-        [enrolmentId, `Month ${monthNum} marked Paid`, req.staff.username, req.staff.branch||'Admin', `Late fee: ${lateFee||0}. Notes: ${notes||''}`]
+        [enrolmentId, `Month ${monthNum} marked Paid`, req.staff.username, req.staff.branch||'Admin',
+         `Late fee: ${lateFee||0}. Notes: ${notes||''}`]
       );
 
-      const msg = allDone
-        ? `Dear Customer, your WHP GMS scheme ${enrolmentId} is now MATURED! WHP team will contact you shortly. - WHP Jewellers`
-        : `Dear Customer, month ${monthNum} payment recorded for WHP GMS scheme ${enrolmentId}. ${pending} payment(s) remaining. - WHP Jewellers`;
-      await sendSms(enrol.phone, msg);
+      if (allDone) {
+        await sendSms(enrol.phone, SMS.matured(enrolmentId, enrol.total_redeemable), 'matured');
+      } else {
+        await sendSms(enrol.phone, SMS.autoDebitSuccess(enrol.instalment_amt, enrolmentId, monthNum, Math.max(0, pending)), 'autoDebitSuccess');
+      }
 
-      return res.json({ success: true, made, pending: Math.max(0,pending), allDone, status, message: allDone ? 'Scheme matured!' : `Month ${monthNum} marked paid.` });
+      return res.json({
+        success: true, made, pending: Math.max(0, pending), allDone, status,
+        message: allDone ? 'Scheme matured!' : `Month ${monthNum} marked paid.`
+      });
     } catch(err) {
       console.error('[GMS] mark-paid error:', err.message);
       return res.status(500).json({ success: false, message: err.message });
@@ -203,7 +206,8 @@ module.exports = function(app) {
       await db.query('UPDATE gms_enrolments SET late_fee_total=late_fee_total+? WHERE enrolment_id=?', [amount, enrolmentId]);
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
-        [enrolmentId, 'Late fee applied', req.staff.username, req.staff.branch||'Admin', `Month ${monthNum}: Rs.${amount}. Reason: ${reason}`]
+        [enrolmentId, 'Late fee applied', req.staff.username, req.staff.branch||'Admin',
+         `Month ${monthNum}: Rs.${amount}. Reason: ${reason}`]
       );
       return res.json({ success: true, message: `Late fee of Rs.${amount} applied.` });
     } catch(err) {
@@ -228,11 +232,11 @@ module.exports = function(app) {
       await db.query("UPDATE gms_enrolments SET status='Discontinued', completion_date=CURDATE() WHERE enrolment_id=?", [enrolmentId]);
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
-        [enrolmentId, 'Scheme Discontinued', req.staff.username, req.staff.branch||'Admin', `Reason: ${reason||'Not specified'}`]
+        [enrolmentId, 'Scheme Discontinued', req.staff.username, req.staff.branch||'Admin',
+         `Reason: ${reason||'Not specified'}`]
       );
-      await sendSms(enrol.phone,
-        `Dear Customer, your WHP GMS scheme ${enrolmentId} has been discontinued. Please contact your nearest WHP branch for details. - WHP Jewellers`
-      );
+
+      await sendSms(enrol.phone, SMS.discontinued(enrolmentId), 'discontinued');
 
       return res.json({ success: true, message: `Scheme ${enrolmentId} discontinued.` });
     } catch(err) {
@@ -242,7 +246,6 @@ module.exports = function(app) {
   });
 
   // ── POST /api/gms-request-discontinue ───────────────
-  // Branch submits a discontinue request
   app.post('/api/gms-request-discontinue', staffAuth, async (req, res) => {
     try {
       const { enrolmentId, reason } = req.body;
@@ -252,19 +255,16 @@ module.exports = function(app) {
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
 
-      // Branch can only request for their own branch
       if (req.staff.role === 'branch' && enrol.preferred_branch !== req.staff.branch) {
         return res.status(403).json({ success: false, message: 'You can only request discontinue for your branch.' });
       }
 
-      // Check if already has pending request
       const [existing] = await db.query(
         "SELECT id FROM gms_discontinue_requests WHERE enrolment_id=? AND status='Pending'",
         [enrolmentId]
       );
       if (existing.length) return res.status(400).json({ success: false, message: 'A pending request already exists for this scheme.' });
 
-      // Calculate refund amount (paid months * instalment - 3%)
       const [paidRows] = await db.query(
         "SELECT COUNT(*) as paid FROM gms_payments WHERE enrolment_id=? AND status='Paid'",
         [enrolmentId]
@@ -281,17 +281,14 @@ module.exports = function(app) {
         [enrolmentId, req.staff.username, req.staff.branch||'Admin', reason, refundAmount]
       );
 
-      // Audit log
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
         [enrolmentId, 'Discontinue Requested', req.staff.username, req.staff.branch||'Admin',
          `Reason: ${reason}. Refund estimate: Rs.${refundAmount}`]
       );
 
-      // SMS to customer — inform request raised
-      await sendSms(enrol.phone,
-        `Dear Customer, a discontinuation request has been raised for your WHP GMS scheme ${enrolmentId}. Our team will review and contact you shortly. - WHP Jewellers`
-      );
+      // Inform customer request is raised — use discontinued template (closest match)
+      await sendSms(enrol.phone, SMS.discontinued(enrolmentId), 'discontinued');
 
       return res.json({
         success: true,
@@ -305,7 +302,6 @@ module.exports = function(app) {
   });
 
   // ── GET /api/gms-discontinue-requests ────────────────
-  // Admin gets all pending discontinue requests
   app.get('/api/gms-discontinue-requests', staffAuth, async (req, res) => {
     try {
       if (req.staff.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
@@ -323,7 +319,6 @@ module.exports = function(app) {
   });
 
   // ── POST /api/gms-review-discontinue ─────────────────
-  // Admin approves or rejects a discontinue request
   app.post('/api/gms-review-discontinue', staffAuth, async (req, res) => {
     try {
       if (req.staff.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
@@ -341,7 +336,6 @@ module.exports = function(app) {
       if (!enrolRows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = enrolRows[0];
 
-      // Update request status
       await db.query(
         `UPDATE gms_discontinue_requests 
          SET status=?, admin_notes=?, reviewed_by=?, reviewed_at=NOW() WHERE id=?`,
@@ -349,35 +343,23 @@ module.exports = function(app) {
       );
 
       if (action === 'Approved') {
-        // Discontinue the scheme
         await db.query(
           "UPDATE gms_enrolments SET status='Discontinued', completion_date=CURDATE() WHERE enrolment_id=?",
           [request.enrolment_id]
         );
-
-        // Audit log
         await db.query(
           'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
           [request.enrolment_id, 'Discontinue Approved', req.staff.username, 'Admin',
            `Request #${requestId} approved. Refund: Rs.${request.refund_amount}. Notes: ${adminNotes||''}`]
         );
-
-        // SMS to customer
-        await sendSms(enrol.phone,
-          `Dear Customer, your WHP GMS scheme ${request.enrolment_id} has been discontinued. Refund of Rs.${request.refund_amount} (after 3% deduction) will be processed via account payee cheque within 30 days. - WHP Jewellers`
-        );
-
+        await sendSms(enrol.phone, SMS.discontinued(request.enrolment_id), 'discontinued');
       } else {
-        // Rejected — notify customer
         await db.query(
           'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
           [request.enrolment_id, 'Discontinue Rejected', req.staff.username, 'Admin',
            `Request #${requestId} rejected. Notes: ${adminNotes||''}`]
         );
-
-        await sendSms(enrol.phone,
-          `Dear Customer, your discontinuation request for WHP GMS scheme ${request.enrolment_id} has been reviewed. Please contact your nearest WHP branch for more information. - WHP Jewellers`
-        );
+        // No SMS for rejection — no matching DLT template
       }
 
       return res.json({
@@ -388,6 +370,61 @@ module.exports = function(app) {
       });
     } catch(err) {
       console.error('[GMS] review-discontinue error:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── GET /api/gms-send-reminders ─────────────────────
+  app.get('/api/gms-send-reminders', async (req, res) => {
+    try {
+      const key = req.headers['x-cron-key'] || req.query.key;
+      if (key !== process.env.GMS_CRON_KEY) return res.status(401).json({ success: false, message: 'Unauthorized.' });
+
+      const today = new Date();
+      const BASE  = 'https://yellowgreen-jay-842557.hostingersite.com';
+
+      const [schemes] = await db.query(`
+        SELECT e.*,
+          (SELECT month_num FROM gms_payments WHERE enrolment_id=e.enrolment_id AND status='Pending' ORDER BY month_num ASC LIMIT 1) as next_pending_month
+        FROM gms_enrolments e
+        WHERE e.status='Active'
+          AND e.pay_method IN ('Pay at Store', 'UPI One-time')
+          AND e.payments_pending > 0
+      `);
+
+      let sent = 0;
+      for (const scheme of schemes) {
+        if (!scheme.next_pending_month) continue;
+
+        const enrollDate = new Date(scheme.enrolment_date || scheme.created_at);
+        const dueDay     = enrollDate.getDate();
+        const dueDate    = new Date(today.getFullYear(), today.getMonth(), dueDay);
+        const diffDays   = Math.round((dueDate - today) / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 5 || diffDays === 0) {
+          const payLink    = `${BASE}/api/razorpay/pay-now/${scheme.enrolment_id}`;
+          const dueDateStr = dueDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+          await sendSms(
+            scheme.phone,
+            SMS.reminder(scheme.instalment_amt, scheme.enrolment_id, dueDateStr, payLink),
+            'reminder'
+          );
+
+          console.log(`[GMS Cron] Reminder sent to ${scheme.phone} for ${scheme.enrolment_id}`);
+          sent++;
+
+          await db.query(
+            'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+            [scheme.enrolment_id, 'Payment Reminder Sent', 'system', 'Auto',
+             `Due on ${dueDateStr}. Month ${scheme.next_pending_month}. SMS sent to ${scheme.phone}`]
+          );
+        }
+      }
+
+      return res.json({ success: true, sent, total: schemes.length });
+    } catch(err) {
+      console.error('[GMS Cron] reminder error:', err.message);
       return res.status(500).json({ success: false, message: err.message });
     }
   });
