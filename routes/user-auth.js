@@ -260,5 +260,50 @@ module.exports = function(app, cache) {
     }
   });
 
+  // ── POST /api/gms/customer-by-phone ─────────────────
+  // Returns existing customer data after OTP verify — for auto-fill
+  app.post('/api/gms/customer-by-phone', async (req, res) => {
+    try {
+      const { phone } = req.body;
+      const cp = cleanPhone(phone);
+      if (!cp) return res.status(400).json({ success: false });
+
+      // Check OTP was verified
+      const otpData = cache.get(`otp:${cp}`);
+      if (!otpData?.verified) return res.json({ success: false, message: 'OTP not verified.' });
+
+      // Find user
+      const [rows] = await db.query('SELECT * FROM gms_users WHERE mobile=?', [cp]);
+      if (!rows.length) return res.json({ success: false }); // New customer
+
+      const u = rows[0];
+
+      // Get default address
+      const [addrs] = await db.query(
+        'SELECT * FROM gms_user_addresses WHERE user_id=? ORDER BY is_default DESC LIMIT 1',
+        [u.user_id]
+      );
+
+      // Create session token for auto-login
+      const token = await createUserSession(u.user_id);
+
+      return res.json({
+        success: true,
+        token,
+        user: {
+          user_id:    u.user_id,
+          first_name: u.first_name,
+          last_name:  u.last_name,
+          mobile:     u.mobile,
+          email:      u.email
+        },
+        address: addrs[0] || null
+      });
+    } catch(err) {
+      console.error('[GMS] customer-by-phone error:', err.message);
+      return res.status(500).json({ success: false });
+    }
+  });
+
   console.log('[GMS] User auth routes loaded');
 };
