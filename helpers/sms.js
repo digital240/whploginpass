@@ -19,7 +19,7 @@ const TEMPLATES = {
 // ── Message builders — text must match DLT approved template exactly ──
 const SMS = {
   otp: (otp) =>
-    `Dear Customer, your WHP Jewellers otp code is ${otp}. - WHP Jewellers`,
+    `Dear user, your WHP Jewellers otp code is ${otp}`,
 
   enrolUpi: (enrolmentId, amt, payMo, redeemable) =>
     `Dear Customer, you have enrolled in WHP Golden Moments Scheme. ID: ${enrolmentId}. Monthly: Rs.${amt} x ${payMo} months. Redeemable: Rs.${redeemable}. - WHP Jewellers`,
