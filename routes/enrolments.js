@@ -151,7 +151,7 @@ module.exports = function(app, cache) {
           [enrolmentId, cp, 'Enrolment', `Enrolled. Monthly: Rs.${amt}. Tenure: ${tenure}mo. Maturity: ${mDate}`, 'Sent']
         );
        // REPLACE WITH:
-const { SMS } = require('../helpers/sms');
+ 
 await sendSms(cp, SMS.enrolStore(enrolmentId, Math.round(parseFloat(amt))), 'enrolStore');
 
         cache.del(`otp:${cp}`);
