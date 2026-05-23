@@ -10,6 +10,14 @@ const rzp = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
+// ── Month label helper — converts month number to "May 2026" ──
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function getMonthLabel(enrolDate, monthNum) {
+  const start = new Date(enrolDate);
+  const d = new Date(start.getFullYear(), start.getMonth() + (monthNum - 1), 1);
+  return MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear();
+}
+
 function verifyWebhookSignature(rawBody, signature) {
   const expected = crypto
     .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
@@ -62,9 +70,11 @@ async function markMonthPaidAuto(enrolmentId, monthNum, paymentId, amount) {
   );
 
   if (status === 'Matured') {
-    await sendSms(enrol.phone, SMS.matured(enrolmentId, enrol.total_redeemable), 'matured');
+    await sendSms(enrol.phone, SMS.matured(enrolmentId, Math.round(parseFloat(enrol.total_redeemable))), 'matured');
   } else {
-    await sendSms(enrol.phone, SMS.autoDebitSuccess(amount / 100, enrolmentId, monthNum, Math.max(0, pending)), 'autoDebitSuccess');
+    const monthLabel = getMonthLabel(enrol.enrolment_date || enrol.created_at, monthNum);
+    const amt        = Math.round(amount / 100);
+    await sendSms(enrol.phone, SMS.autoDebitSuccess(amt, enrolmentId, monthLabel, Math.max(0, pending)), 'autoDebitSuccess');
   }
 
   return { made, pending: Math.max(0, pending), status };
@@ -131,8 +141,6 @@ module.exports = function(app, cache) {
       }
 
       const sub = await rzp.subscriptions.fetch(enrol.razorpay_subscription_id);
-
-      // ── mandateLink template
       await sendSms(enrol.phone, SMS.mandateLink(sub.short_url), 'mandateLink');
 
       return res.json({ success: true, shortUrl: sub.short_url, message: 'Mandate link sent via SMS.' });
@@ -166,7 +174,7 @@ module.exports = function(app, cache) {
   // ── POST /api/gms-payment-webhook ─────────────────────
   app.post('/api/gms-payment-webhook', async (req, res) => {
     try {
-      const signature   = req.headers['x-razorpay-signature'];
+      const signature    = req.headers['x-razorpay-signature'];
       const isTestBypass = req.headers['x-webhook-test'] === (process.env.GMS_CRON_SECRET || 'whpcron2026');
       if (!isTestBypass && !verifyWebhookSignature(req.rawBody, signature)) {
         console.error('[Webhook] Invalid signature');
@@ -192,18 +200,26 @@ module.exports = function(app, cache) {
             if (!authEnrol.user_id) {
               const [userRows] = await db.query('SELECT user_id FROM gms_users WHERE mobile=? LIMIT 1', [authEnrol.phone]);
               if (userRows.length) {
-                await db.query('UPDATE gms_enrolments SET user_id=? WHERE enrolment_id=?', [userRows[0].user_id, authEnrol.enrolment_id]);
+                await db.query('UPDATE gms_enrolments SET user_id=? WHERE enrolment_id=?',
+                  [userRows[0].user_id, authEnrol.enrolment_id]);
               }
             }
             await db.query(
               'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
-              [authEnrol.enrolment_id, 'Scheme Activated via Mandate', 'Razorpay', authEnrol.preferred_branch || 'Online', `Subscription: ${subId}`]
+              [authEnrol.enrolment_id, 'Scheme Activated via Mandate', 'Razorpay',
+               authEnrol.preferred_branch || 'Online', `Subscription: ${subId}`]
             );
-            // ── schemeActive template
-            await sendSms(authEnrol.phone, SMS.schemeActive(authEnrol.enrolment_id, authEnrol.instalment_amt), 'schemeActive');
+            await sendSms(
+              authEnrol.phone,
+              SMS.schemeActive(authEnrol.enrolment_id, Math.round(parseFloat(authEnrol.instalment_amt))),
+              'schemeActive'
+            );
             console.log(`[Webhook] Scheme activated on mandate: ${authEnrol.enrolment_id}`);
           } else {
-            await db.query(`UPDATE gms_enrolments SET razorpay_sub_status='authenticated' WHERE razorpay_subscription_id=?`, [subId]);
+            await db.query(
+              `UPDATE gms_enrolments SET razorpay_sub_status='authenticated' WHERE razorpay_subscription_id=?`,
+              [subId]
+            );
           }
           break;
         }
@@ -211,7 +227,9 @@ module.exports = function(app, cache) {
         case 'subscription.activated': {
           const subId = payload.subscription?.entity?.id;
           if (!subId) break;
-          await db.query(`UPDATE gms_enrolments SET razorpay_sub_status='active' WHERE razorpay_subscription_id=?`, [subId]);
+          await db.query(
+            `UPDATE gms_enrolments SET razorpay_sub_status='active' WHERE razorpay_subscription_id=?`, [subId]
+          );
           console.log(`[Webhook] Subscription activated: ${subId}`);
           break;
         }
@@ -223,7 +241,9 @@ module.exports = function(app, cache) {
           const subId = payment.subscription_id || payload.subscription?.entity?.id;
           if (!subId) { console.log('[Webhook] No subscription ID — skipping'); break; }
 
-          const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE razorpay_subscription_id=?', [subId]);
+          const [enrolRows] = await db.query(
+            'SELECT * FROM gms_enrolments WHERE razorpay_subscription_id=?', [subId]
+          );
           if (!enrolRows.length) { console.error(`[Webhook] No enrolment for subscription: ${subId}`); break; }
           const enrol = enrolRows[0];
 
@@ -233,8 +253,16 @@ module.exports = function(app, cache) {
           // Draft → Active on first payment
           if (enrol.status === 'Draft') {
             await db.query("UPDATE gms_enrolments SET status='Active' WHERE enrolment_id=?", [enrol.enrolment_id]);
-            // ── enrolUpi template
-            await sendSms(enrol.phone, SMS.enrolUpi(enrol.enrolment_id, enrol.instalment_amt, enrol.pay_months, enrol.total_redeemable), 'enrolUpi');
+            await sendSms(
+              enrol.phone,
+              SMS.enrolUpi(
+                enrol.enrolment_id,
+                Math.round(parseFloat(enrol.instalment_amt)),
+                enrol.pay_months,
+                Math.round(parseFloat(enrol.total_redeemable))
+              ),
+              'enrolUpi'
+            );
             console.log(`[Webhook] Draft → Active: ${enrol.enrolment_id}`);
           }
 
@@ -247,7 +275,9 @@ module.exports = function(app, cache) {
           const payment = payload.payment?.entity;
           if (!payment?.subscription_id) break;
 
-          const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE razorpay_subscription_id=?', [payment.subscription_id]);
+          const [enrolRows] = await db.query(
+            'SELECT * FROM gms_enrolments WHERE razorpay_subscription_id=?', [payment.subscription_id]
+          );
           if (!enrolRows.length) break;
           const enrol = enrolRows[0];
 
@@ -265,8 +295,12 @@ module.exports = function(app, cache) {
              `Payment ID: ${payment.id}. Error: ${payment.error_description || 'Unknown'}`]
           );
 
-          // ── autoDebitFailed template
-          await sendSms(enrol.phone, SMS.autoDebitFailed(enrol.instalment_amt, monthNum), 'autoDebitFailed');
+          const failMonthLabel = getMonthLabel(enrol.enrolment_date || enrol.created_at, monthNum);
+          await sendSms(
+            enrol.phone,
+            SMS.autoDebitFailed(Math.round(parseFloat(enrol.instalment_amt)), failMonthLabel),
+            'autoDebitFailed'
+          );
 
           await db.query(
             'INSERT INTO gms_notifications (enrolment_id, phone, type, message, status) VALUES (?,?,?,?,?)',
@@ -281,11 +315,14 @@ module.exports = function(app, cache) {
         case 'subscription.halted': {
           const subId = payload.subscription?.entity?.id;
           if (!subId) break;
-          const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE razorpay_subscription_id=?', [subId]);
+          const [enrolRows] = await db.query(
+            'SELECT * FROM gms_enrolments WHERE razorpay_subscription_id=?', [subId]
+          );
           if (!enrolRows.length) break;
           const enrol = enrolRows[0];
-          await db.query(`UPDATE gms_enrolments SET razorpay_sub_status='halted' WHERE enrolment_id=?`, [enrol.enrolment_id]);
-          // ── halted template
+          await db.query(
+            `UPDATE gms_enrolments SET razorpay_sub_status='halted' WHERE enrolment_id=?`, [enrol.enrolment_id]
+          );
           await sendSms(enrol.phone, SMS.halted(), 'halted');
           console.log(`[Webhook] Subscription halted: ${subId}`);
           break;
@@ -294,7 +331,9 @@ module.exports = function(app, cache) {
         case 'subscription.cancelled': {
           const subId = payload.subscription?.entity?.id;
           if (!subId) break;
-          await db.query(`UPDATE gms_enrolments SET razorpay_sub_status='cancelled' WHERE razorpay_subscription_id=?`, [subId]);
+          await db.query(
+            `UPDATE gms_enrolments SET razorpay_sub_status='cancelled' WHERE razorpay_subscription_id=?`, [subId]
+          );
           console.log(`[Webhook] Subscription cancelled: ${subId}`);
           break;
         }
@@ -302,15 +341,20 @@ module.exports = function(app, cache) {
         case 'subscription.completed': {
           const subId = payload.subscription?.entity?.id;
           if (!subId) break;
-          const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE razorpay_subscription_id=?', [subId]);
+          const [enrolRows] = await db.query(
+            'SELECT * FROM gms_enrolments WHERE razorpay_subscription_id=?', [subId]
+          );
           if (!enrolRows.length) break;
           const enrol = enrolRows[0];
           await db.query(
             `UPDATE gms_enrolments SET status='Matured', razorpay_sub_status='completed' WHERE enrolment_id=?`,
             [enrol.enrolment_id]
           );
-          // ── matured template
-          await sendSms(enrol.phone, SMS.matured(enrol.enrolment_id, enrol.total_redeemable), 'matured');
+          await sendSms(
+            enrol.phone,
+            SMS.matured(enrol.enrolment_id, Math.round(parseFloat(enrol.total_redeemable))),
+            'matured'
+          );
           console.log(`[Webhook] Subscription completed: ${subId}`);
           break;
         }
@@ -371,7 +415,10 @@ module.exports = function(app, cache) {
 
       const plan = await rzp.plans.create({
         period: process.env.GMS_PLAN_PERIOD || 'monthly', interval: 1,
-        item: { name: 'WHP GMS - ' + enrol.enrolment_id, amount: amountPaise, currency: 'INR', description: 'WHP Golden Moments Scheme' }
+        item: {
+          name: 'WHP GMS - ' + enrol.enrolment_id, amount: amountPaise,
+          currency: 'INR', description: 'WHP Golden Moments Scheme'
+        }
       });
 
       const subOpts = {
@@ -410,7 +457,10 @@ module.exports = function(app, cache) {
       const order = await rzp.orders.create({
         amount: amountPaise, currency: 'INR',
         receipt: `${enrolmentId}-M${monthNum}`,
-        notes: { enrolment_id: enrolmentId, month_num: String(monthNum), customer_phone: enrol.phone, payment_type: 'one_time' }
+        notes: {
+          enrolment_id: enrolmentId, month_num: String(monthNum),
+          customer_phone: enrol.phone, payment_type: 'one_time'
+        }
       });
 
       console.log(`[Razorpay] One-time order: ${order.id} for ${enrolmentId} Month ${monthNum}`);
@@ -442,9 +492,15 @@ module.exports = function(app, cache) {
         console.log(`[Razorpay] Draft → Active via one-time: ${enrolmentId}`);
       }
 
-      const result = await markMonthPaidAuto(enrolmentId, parseInt(monthNum), razorpay_payment_id, parseFloat(enrol.instalment_amt) * 100);
+      const result = await markMonthPaidAuto(
+        enrolmentId, parseInt(monthNum), razorpay_payment_id,
+        parseFloat(enrol.instalment_amt) * 100
+      );
 
-      return res.json({ success: true, message: `Month ${monthNum} payment verified!`, made: result?.made, status: result?.status });
+      return res.json({
+        success: true, message: `Month ${monthNum} payment verified!`,
+        made: result?.made, status: result?.status
+      });
     } catch(err) {
       console.error('[Razorpay] verify-onetime error:', err.message);
       return res.status(500).json({ success: false, message: err.message });
@@ -575,11 +631,15 @@ module.exports = function(app, cache) {
         [made, Math.max(0, pending), allDone ? 'Matured' : 'Active', enrolmentId]
       );
 
-      // ── correct template based on outcome
       if (allDone) {
-        await sendSms(enrol.phone, SMS.matured(enrolmentId, enrol.total_redeemable), 'matured');
+        await sendSms(enrol.phone, SMS.matured(enrolmentId, Math.round(parseFloat(enrol.total_redeemable))), 'matured');
       } else {
-        await sendSms(enrol.phone, SMS.autoDebitSuccess(enrol.instalment_amt, enrolmentId, monthNum, Math.max(0, pending)), 'autoDebitSuccess');
+        const pnMonthLabel = getMonthLabel(enrol.enrolment_date || enrol.created_at, monthNum);
+        await sendSms(
+          enrol.phone,
+          SMS.autoDebitSuccess(Math.round(parseFloat(enrol.instalment_amt)), enrolmentId, pnMonthLabel, Math.max(0, pending)),
+          'autoDebitSuccess'
+        );
       }
 
       return res.json({ success: true });
@@ -613,13 +673,21 @@ module.exports = function(app, cache) {
 
       const plan = await rzp.plans.create({
         period: process.env.GMS_PLAN_PERIOD || 'monthly', interval: 1,
-        item: { name: `WHP GMS ${enrolmentId}`, amount: Math.round(parseFloat(enrol.instalment_amt) * 100), currency: 'INR' }
+        item: {
+          name: `WHP GMS ${enrolmentId}`,
+          amount: Math.round(parseFloat(enrol.instalment_amt) * 100),
+          currency: 'INR'
+        }
       });
 
       const currentMonthPending = pendingRows.length > 0 && pendingRows[0].month_num === made + 1;
       const sub = await rzp.subscriptions.create({
         plan_id: plan.id, total_count: remaining, quantity: 1, customer_notify: 1,
-        ...(currentMonthPending ? {} : { start_at: Math.floor(new Date(enrol.enrolment_date).setMonth(new Date(enrol.enrolment_date).getMonth() + made + 1) / 1000) }),
+        ...(currentMonthPending ? {} : {
+          start_at: Math.floor(
+            new Date(enrol.enrolment_date).setMonth(new Date(enrol.enrolment_date).getMonth() + made + 1) / 1000
+          )
+        }),
         notes: { enrolmentId, phone: enrol.phone }
       });
 
@@ -628,7 +696,6 @@ module.exports = function(app, cache) {
         [plan.id, sub.id, enrolmentId]
       );
 
-      // ── mandateLink template
       await sendSms(enrol.phone, SMS.mandateLink(sub.short_url), 'mandateLink');
 
       return res.json({ success: true, subscriptionId: sub.id, shortUrl: sub.short_url, currentMonthPending });
