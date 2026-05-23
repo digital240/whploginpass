@@ -2,14 +2,13 @@
 const db       = require('../db');
 const crypto   = require('crypto');
 const Razorpay = require('razorpay');
-const { sendSms } = require('../helpers/sms');
+const { sendSms, SMS } = require('../helpers/sms');
 
 const rzp = new Razorpay({
   key_id:     process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
-// Generate a secure pay token for SMS links (no login needed)
 function generatePayToken(enrolmentId, monthNum) {
   const secret = process.env.WLP_TOKEN_SECRET || 'whpgms2026';
   return crypto.createHmac('sha256', secret)
@@ -18,7 +17,6 @@ function generatePayToken(enrolmentId, monthNum) {
     .slice(0, 32);
 }
 
-// Get current pending month for an enrolment
 async function getCurrentPendingMonth(enrolmentId) {
   const [rows] = await db.query(
     "SELECT * FROM gms_payments WHERE enrolment_id=? AND status='Pending' ORDER BY month_num ASC LIMIT 1",
@@ -30,11 +28,9 @@ async function getCurrentPendingMonth(enrolmentId) {
 module.exports = function(app, cache) {
 
   // ── GET /api/gms/pay-link/:token ─────────────────────
-  // Returns pay info for tokenized link (no login needed)
   app.get('/api/gms/pay-link/:token', async (req, res) => {
     try {
       const { token } = req.params;
-      // Find enrolment by token stored in cache or DB
       const cached = cache.get(`paylink:${token}`);
       if (!cached) return res.status(404).json({ success: false, message: 'Payment link expired or invalid.' });
 
@@ -43,7 +39,6 @@ module.exports = function(app, cache) {
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
 
-      // Check if this month is still pending
       const [payRows] = await db.query(
         "SELECT * FROM gms_payments WHERE enrolment_id=? AND month_num=?",
         [enrolmentId, monthNum]
@@ -52,13 +47,12 @@ module.exports = function(app, cache) {
 
       return res.json({
         success: true,
-        enrolmentId,
-        monthNum,
-        amount: enrol.instalment_amt,
-        name: enrol.name,
-        phone: enrol.phone,
+        enrolmentId, monthNum,
+        amount:      enrol.instalment_amt,
+        name:        enrol.name,
+        phone:       enrol.phone,
         alreadyPaid: pay?.status === 'Paid',
-        status: pay?.status || 'Pending'
+        status:      pay?.status || 'Pending'
       });
     } catch(err) {
       return res.status(500).json({ success: false, message: err.message });
@@ -66,7 +60,6 @@ module.exports = function(app, cache) {
   });
 
   // ── POST /api/gms/create-pay-order ───────────────────
-  // Creates Razorpay order for one-time payment (no login needed, uses token)
   app.post('/api/gms/create-pay-order', async (req, res) => {
     try {
       const { token } = req.body;
@@ -80,14 +73,12 @@ module.exports = function(app, cache) {
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
 
-      // Check not already paid
       const [payRows] = await db.query(
         "SELECT * FROM gms_payments WHERE enrolment_id=? AND month_num=? AND status='Paid'",
         [enrolmentId, monthNum]
       );
       if (payRows.length) return res.status(400).json({ success: false, message: 'This month is already paid.' });
 
-      // Create Razorpay order
       const order = await rzp.orders.create({
         amount:   Math.round(parseFloat(enrol.instalment_amt) * 100),
         currency: 'INR',
@@ -98,8 +89,7 @@ module.exports = function(app, cache) {
         success: true,
         orderId:     order.id,
         amountPaise: order.amount,
-        enrolmentId,
-        monthNum,
+        enrolmentId, monthNum,
         name:  enrol.name,
         phone: enrol.phone,
         email: enrol.email || ''
@@ -111,13 +101,11 @@ module.exports = function(app, cache) {
   });
 
   // ── POST /api/gms/verify-pay-order ───────────────────
-  // Verifies payment and marks month paid (no login needed)
   app.post('/api/gms/verify-pay-order', async (req, res) => {
     try {
       const { razorpay_order_id, razorpay_payment_id, razorpay_signature, enrolmentId, monthNum } = req.body;
 
-      // Verify signature
-      const body = razorpay_order_id + '|' + razorpay_payment_id;
+      const body     = razorpay_order_id + '|' + razorpay_payment_id;
       const expected = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
         .update(body).digest('hex');
       if (expected !== razorpay_signature) {
@@ -128,7 +116,6 @@ module.exports = function(app, cache) {
       if (!enrolRows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = enrolRows[0];
 
-      // Mark month paid
       await db.query(
         `UPDATE gms_payments SET status='Paid', paid_at=NOW(),
          pay_method='UPI One-time', collected_branch=?, razorpay_payment_id=?, notes='Paid via SMS link'
@@ -136,7 +123,6 @@ module.exports = function(app, cache) {
         [enrol.preferred_branch || 'Online', razorpay_payment_id, enrolmentId, monthNum]
       );
 
-      // Update enrolment counts
       const [countRows] = await db.query(
         "SELECT COUNT(*) as paid FROM gms_payments WHERE enrolment_id=? AND status='Paid'",
         [enrolmentId]
@@ -151,28 +137,26 @@ module.exports = function(app, cache) {
         [made, Math.max(0, pending), status, enrolmentId]
       );
 
-      // Audit log
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
-        [enrolmentId, `Month ${monthNum} Paid via SMS link`, 'Customer', enrol.preferred_branch || 'Online',
-         `Payment ID: ${razorpay_payment_id}`]
+        [enrolmentId, `Month ${monthNum} Paid via SMS link`, 'Customer',
+         enrol.preferred_branch || 'Online', `Payment ID: ${razorpay_payment_id}`]
       );
 
-      // SMS confirmation
-      const msg = allDone
-        ? `Dear Customer, your WHP GMS scheme ${enrolmentId} is now MATURED! Our team will contact you shortly. - WHP Jewellers`
-        : `Dear Customer, month ${monthNum} payment of Rs.${enrol.instalment_amt} received for WHP GMS scheme ${enrolmentId}. ${Math.max(0,pending)} payment(s) remaining. - WHP Jewellers`;
-      await sendSms(enrol.phone, msg);
+      if (allDone) {
+        await sendSms(enrol.phone, SMS.matured(enrolmentId, enrol.total_redeemable), 'matured');
+      } else {
+        await sendSms(enrol.phone, SMS.autoDebitSuccess(enrol.instalment_amt, enrolmentId, monthNum, Math.max(0, pending)), 'autoDebitSuccess');
+      }
 
-      return res.json({ success: true, made, pending: Math.max(0,pending), allDone, message: 'Payment successful!' });
+      return res.json({ success: true, made, pending: Math.max(0, pending), allDone, message: 'Payment successful!' });
     } catch(err) {
       console.error('[GMS] verify-pay-order error:', err.message);
       return res.status(500).json({ success: false, message: err.message });
     }
   });
 
-  // ── POST /api/gms/setup-autopay-link ───────────────────
-  // Setup autopay from SMS pay link — no login needed, uses token
+  // ── POST /api/gms/setup-autopay-link ─────────────────
   app.post('/api/gms/setup-autopay-link', async (req, res) => {
     try {
       const { token } = req.body;
@@ -186,16 +170,13 @@ module.exports = function(app, cache) {
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
 
-      // Only block if already truly active
       if (enrol.pay_method === 'UPI Auto-debit' && enrol.razorpay_sub_status === 'active') {
         return res.status(400).json({ success: false, message: 'Autopay is already active.' });
       }
 
-      // Cancel existing incomplete subscription if any
       if (enrol.razorpay_subscription_id && enrol.razorpay_sub_status !== 'active') {
-        try {
-          await rzp.subscriptions.cancel(enrol.razorpay_subscription_id, { cancel_at_cycle_end: false });
-        } catch(e) { console.log('[GMS] Old sub cancel (ok):', e.message); }
+        try { await rzp.subscriptions.cancel(enrol.razorpay_subscription_id, { cancel_at_cycle_end: false }); }
+        catch(e) { console.log('[GMS] Old sub cancel (ok):', e.message); }
       }
 
       const remainingMonths = parseInt(enrol.payments_pending) || 0;
@@ -203,11 +184,9 @@ module.exports = function(app, cache) {
         return res.status(400).json({ success: false, message: 'No remaining payments.' });
       }
 
-      // Check if current month pending — charge immediately
       const pendingPay = await getCurrentPendingMonth(enrolmentId);
       const chargeNow  = pendingPay !== null;
 
-      // Create plan
       const plan = await rzp.plans.create({
         period: process.env.GMS_PLAN_PERIOD || 'monthly', interval: 1,
         item: {
@@ -236,9 +215,12 @@ module.exports = function(app, cache) {
 
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
-        [enrolmentId, 'Autopay Setup via SMS Link', enrol.phone, enrol.preferred_branch || 'Online',
-         `Sub: ${subscription.id}. ChargeNow: ${chargeNow}`]
+        [enrolmentId, 'Autopay Setup via SMS Link', enrol.phone,
+         enrol.preferred_branch || 'Online', `Sub: ${subscription.id}. ChargeNow: ${chargeNow}`]
       );
+
+      // Send mandate link SMS
+      await sendSms(enrol.phone, SMS.mandateLink(subscription.short_url), 'mandateLink');
 
       return res.json({
         success: true,
@@ -253,7 +235,6 @@ module.exports = function(app, cache) {
   });
 
   // ── POST /api/gms/setup-autopay ──────────────────────
-  // Customer sets up UPI subscription for remaining months
   app.post('/api/gms/setup-autopay', async (req, res) => {
     try {
       const userToken = req.headers['x-user-token'];
@@ -267,40 +248,31 @@ module.exports = function(app, cache) {
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
 
-      // Verify ownership
       if (enrol.phone !== user.mobile && enrol.user_id !== user.user_id) {
         return res.status(403).json({ success: false, message: 'Not your scheme.' });
       }
 
-      // Only block if subscription is actually active
       if (enrol.pay_method === 'UPI Auto-debit' && enrol.razorpay_sub_status === 'active') {
         return res.status(400).json({ success: false, message: 'Autopay is already active for this scheme.' });
       }
 
-      // Check current month status
-      const currentPending = await getCurrentPendingMonth(enrolmentId);
-      const chargeNow = currentPending !== null; // true = current month pending, charge immediately
-
-      // Calculate remaining months
+      const currentPending  = await getCurrentPendingMonth(enrolmentId);
+      const chargeNow       = currentPending !== null;
       const remainingMonths = parseInt(enrol.payments_pending) || 0;
+
       if (remainingMonths === 0) {
         return res.status(400).json({ success: false, message: 'No remaining payments — scheme is complete.' });
       }
 
-      // Cancel existing incomplete subscription if any
       if (enrol.razorpay_subscription_id && enrol.razorpay_sub_status !== 'active') {
         try {
           await rzp.subscriptions.cancel(enrol.razorpay_subscription_id, { cancel_at_cycle_end: false });
           console.log(`[GMS] Cancelled old incomplete subscription ${enrol.razorpay_subscription_id}`);
-        } catch(e) {
-          console.log('[GMS] Old subscription cancel (ok):', e.message);
-        }
+        } catch(e) { console.log('[GMS] Old subscription cancel (ok):', e.message); }
       }
 
-      // Create Razorpay plan
       const plan = await rzp.plans.create({
-        period:   process.env.GMS_PLAN_PERIOD || 'monthly',
-        interval: 1,
+        period: process.env.GMS_PLAN_PERIOD || 'monthly', interval: 1,
         item: {
           name:     `WHP GMS ${enrolmentId}`,
           amount:   Math.round(parseFloat(enrol.instalment_amt) * 100),
@@ -308,23 +280,16 @@ module.exports = function(app, cache) {
         }
       });
 
-      // Create subscription for remaining months
-      // If current month pending → total_count = remainingMonths (includes current)
-      // If current month paid → total_count = remainingMonths (future only)
       const startAt = chargeNow
-        ? Math.floor(Date.now() / 1000) + 60 // start in 1 min (immediate)
-        : Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60); // start next month
+        ? Math.floor(Date.now() / 1000) + 60
+        : Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60);
 
       const subscription = await rzp.subscriptions.create({
-        plan_id:     plan.id,
-        total_count: remainingMonths,
-        quantity:    1,
-        start_at:    startAt,
-        customer_notify: 1,
+        plan_id: plan.id, total_count: remainingMonths, quantity: 1,
+        start_at: startAt, customer_notify: 1,
         notes: { enrolmentId, type: 'gms_setup_autopay' }
       });
 
-      // Update enrolment
       await db.query(
         `UPDATE gms_enrolments SET pay_method='UPI Auto-debit',
          razorpay_plan_id=?, razorpay_subscription_id=?, razorpay_sub_status='created'
@@ -334,9 +299,12 @@ module.exports = function(app, cache) {
 
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
-        [enrolmentId, 'Autopay Setup', user.mobile, enrol.preferred_branch || 'Online',
-         `Subscription: ${subscription.id}. Charge now: ${chargeNow}`]
+        [enrolmentId, 'Autopay Setup', user.mobile,
+         enrol.preferred_branch || 'Online', `Subscription: ${subscription.id}. Charge now: ${chargeNow}`]
       );
+
+      // Send mandate link SMS
+      await sendSms(enrol.phone, SMS.mandateLink(subscription.short_url), 'mandateLink');
 
       return res.json({
         success: true,
@@ -354,9 +322,7 @@ module.exports = function(app, cache) {
   });
 
   // ── POST /api/gms/send-reminders (cron trigger) ──────
-  // Called daily by cron — sends SMS for due in 5 days + due today
   app.post('/api/gms/send-reminders', async (req, res) => {
-    // Simple secret check
     const secret = req.headers['x-cron-secret'];
     if (secret !== process.env.GMS_CRON_SECRET) {
       return res.status(403).json({ success: false, message: 'Unauthorized.' });
@@ -368,7 +334,6 @@ module.exports = function(app, cache) {
       const todayDay = today.getDate();
       const in5Day   = in5Days.getDate();
 
-      // Get all active non-UPI enrolments
       const [enrolments] = await db.query(
         `SELECT * FROM gms_enrolments 
          WHERE status='Active' AND pay_method != 'UPI Auto-debit'
@@ -379,47 +344,48 @@ module.exports = function(app, cache) {
 
       for (const enrol of enrolments) {
         const enrollDate = new Date(enrol.enrolment_date || enrol.created_at);
-        const dueDay     = enrollDate.getDate(); // same day each month
-
-        const isDueIn5  = dueDay === in5Day;
+        const dueDay     = enrollDate.getDate();
+        const isDueIn5   = dueDay === in5Day;
         const isDueToday = dueDay === todayDay;
 
         if (!isDueIn5 && !isDueToday) continue;
 
-        // Find current pending month
         const pendingPay = await getCurrentPendingMonth(enrol.enrolment_id);
         if (!pendingPay) continue;
 
-        // Generate pay token (valid 7 days)
         const token = generatePayToken(enrol.enrolment_id, pendingPay.month_num);
         cache.set(`paylink:${token}`, {
           enrolmentId: enrol.enrolment_id,
           monthNum:    pendingPay.month_num
-        }, 7 * 24 * 60 * 60); // 7 days
+        }, 7 * 24 * 60 * 60);
 
-        const BASE_URL   = process.env.GMS_BASE_URL || 'https://gms.whpjewellers.com';
-        const payUrl     = `${BASE_URL}/pay?t=${token}`;
-        const profileUrl = `${BASE_URL}/my-profile`;
-        const amt        = Number(enrol.instalment_amt).toLocaleString('en-IN');
-        const dueStr     = isDueToday ? 'today' : 'in 5 days';
+        const BASE_URL = process.env.GMS_BASE_URL || 'https://gms.whpjewellers.com';
+        const payUrl   = `${BASE_URL}/pay?t=${token}`;
+        const dueStr   = isDueToday
+          ? today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : in5Days.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-        const sms = isDueToday
-          ? `Dear Customer, your WHP GMS payment of Rs.${amt} for scheme ${enrol.enrolment_id} is due today. Pay now: ${payUrl} or set up autopay: ${profileUrl} - WHP Jewellers`
-          : `Dear Customer, your WHP GMS payment of Rs.${amt} for scheme ${enrol.enrolment_id} is due ${dueStr}. Pay now: ${payUrl} or set up autopay: ${profileUrl} - WHP Jewellers`;
-
-        await sendSms(enrol.phone, sms);
+        await sendSms(
+          enrol.phone,
+          SMS.reminder(enrol.instalment_amt, enrol.enrolment_id, dueStr, payUrl),
+          'reminder'
+        );
 
         if (isDueIn5)   sent5day++;
         if (isDueToday) sentToday++;
 
         console.log(`[GMS Reminder] Sent to ${enrol.phone} for ${enrol.enrolment_id} M${pendingPay.month_num}`);
+
+        await db.query(
+          'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+          [enrol.enrolment_id, 'Payment Reminder Sent', 'system', 'Auto',
+           `Due on ${dueStr}. Month ${pendingPay.month_num}. SMS sent to ${enrol.phone}`]
+        );
       }
 
       return res.json({
-        success: true,
-        sent5day,
-        sentToday,
-        total: sent5day + sentToday,
+        success: true, sent5day, sentToday,
+        total:   sent5day + sentToday,
         message: `Reminders sent: ${sent5day} (5-day), ${sentToday} (due today)`
       });
     } catch(err) {
@@ -429,7 +395,6 @@ module.exports = function(app, cache) {
   });
 
   // ── POST /api/gms/switch-to-store ───────────────────
-  // Customer cancels UPI autopay and switches to store payment
   app.post('/api/gms/switch-to-store', async (req, res) => {
     try {
       const userToken = req.headers['x-user-token'];
@@ -445,49 +410,37 @@ module.exports = function(app, cache) {
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
 
-      // Verify ownership
       if (enrol.phone !== user.mobile && enrol.user_id !== user.user_id) {
         return res.status(403).json({ success: false, message: 'Not your scheme.' });
       }
-
       if (enrol.pay_method !== 'UPI Auto-debit') {
         return res.status(400).json({ success: false, message: 'This scheme is not on UPI autopay.' });
       }
-
       if (enrol.status !== 'Active') {
         return res.status(400).json({ success: false, message: 'Can only switch active schemes.' });
       }
 
-      // Cancel Razorpay subscription
       if (enrol.razorpay_subscription_id) {
         try {
           await rzp.subscriptions.cancel(enrol.razorpay_subscription_id, { cancel_at_cycle_end: false });
           console.log(`[GMS] Cancelled subscription ${enrol.razorpay_subscription_id}`);
-        } catch(e) {
-          console.log('[GMS] Razorpay cancel error (continuing):', e.message);
-        }
+        } catch(e) { console.log('[GMS] Razorpay cancel error (continuing):', e.message); }
       }
 
-      // Update enrolment — switch to store payment
       await db.query(
-        `UPDATE gms_enrolments SET 
-         pay_method='Pay at Store',
-         razorpay_sub_status='cancelled'
+        `UPDATE gms_enrolments SET pay_method='Pay at Store', razorpay_sub_status='cancelled'
          WHERE enrolment_id=?`,
         [enrolmentId]
       );
 
-      // Audit log
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
-        [enrolmentId, 'Switched to Store Payment', user.mobile, enrol.preferred_branch || 'Online',
+        [enrolmentId, 'Switched to Store Payment', user.mobile,
+         enrol.preferred_branch || 'Online',
          `UPI subscription ${enrol.razorpay_subscription_id || 'N/A'} cancelled by customer`]
       );
 
-      // SMS to customer
-      await sendSms(enrol.phone,
-        `Dear Customer, your WHP GMS scheme ${enrolmentId} has been switched to store payment. Please visit your nearest WHP branch to make monthly payments. - WHP Jewellers`
-      );
+      // No DLT template for switch-to-store — skip SMS
 
       return res.json({
         success: true,
@@ -500,23 +453,20 @@ module.exports = function(app, cache) {
   });
 
   // ── POST /api/gms/activate-scheme ───────────────────
-  // Called after customer completes UPI mandate — activates scheme immediately
   app.post('/api/gms/activate-scheme', async (req, res) => {
     try {
       const { subscriptionId, enrolmentId } = req.body;
       if (!enrolmentId && !subscriptionId) return res.status(400).json({ success: false });
 
-      // Find enrolment
       let query = 'SELECT * FROM gms_enrolments WHERE ';
       let param;
       if (enrolmentId) { query += 'enrolment_id=?'; param = enrolmentId; }
-      else { query += 'razorpay_subscription_id=?'; param = subscriptionId; }
+      else             { query += 'razorpay_subscription_id=?'; param = subscriptionId; }
 
       const [rows] = await db.query(query, [param]);
       if (!rows.length) return res.status(404).json({ success: false });
       const enrol = rows[0];
 
-      // Only activate if Draft or authenticated
       if (enrol.status === 'Active') return res.json({ success: true, already: true, message: 'Already active.' });
 
       await db.query(
@@ -525,7 +475,6 @@ module.exports = function(app, cache) {
         [enrol.enrolment_id]
       );
 
-      // Link user account by phone if not linked
       if (!enrol.user_id) {
         const [userRows] = await db.query(
           'SELECT user_id FROM gms_users WHERE mobile=? LIMIT 1', [enrol.phone]
@@ -536,12 +485,14 @@ module.exports = function(app, cache) {
         }
       }
 
-      // Audit
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
-        [enrol.enrolment_id, 'Scheme Activated', 'Customer', enrol.preferred_branch || 'Online',
-         'Activated after UPI mandate completion']
+        [enrol.enrolment_id, 'Scheme Activated', 'Customer',
+         enrol.preferred_branch || 'Online', 'Activated after UPI mandate completion']
       );
+
+      // Send scheme active SMS
+      await sendSms(enrol.phone, SMS.schemeActive(enrol.enrolment_id, enrol.instalment_amt), 'schemeActive');
 
       console.log(`[GMS] Scheme activated: ${enrol.enrolment_id}`);
       return res.json({ success: true, message: 'Scheme activated!' });
