@@ -360,7 +360,7 @@ cache.set(`paylink:${token}`, {
   monthNum:    pendingPay.month_num
 }, 7 * 24 * 60 * 60);
 
-const BASE_URL = process.env.GMS_BASE_URL || 'https://whpjewellers.com';
+const BASE_URL = process.env.GMS_BASE_URL || 'https://gms.whpjewellers.com';
 const payUrl   = `${BASE_URL}/pay/${token}`;
        function fmtDue(d) {
   const dd = String(d.getDate()).padStart(2, '0');
