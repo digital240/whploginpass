@@ -4,7 +4,7 @@
 const db    = require('../db');
 const axios = require('axios');
 const { getUserFromToken, createUserSession } = require('../helpers/auth');
-const { sendSms }                 = require('../helpers/sms');
+const { sendSms, SMS } = require('../helpers/sms');
 const { generateOtp, cleanPhone } = require('../helpers/utils');
 
 // ── Shopify helpers ───────────────────────────────────────
@@ -68,7 +68,7 @@ module.exports = function(app, cache) {
       cache.set(`gms_otp:${mobile}`,          { otp, verified: false }, 600);
       cache.set(`otp:${mobile}`,              { phone: mobile, verified: false }, 600);
       cache.set(`gms_otp_attempts:${mobile}`, 0, 600);
-      await sendSms(mobile, `Dear user, your WHP Jewellers otp code is ${otp}`);
+      await sendSms(mobile, SMS.otp(otp), 'otp');
       const [rows] = await db.query('SELECT user_id FROM gms_users WHERE mobile=?', [mobile]);
       return res.json({ success: true, message: `OTP sent to +91 ${mobile}`, isRegistered: rows.length > 0 });
     } catch(err) {
