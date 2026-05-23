@@ -36,8 +36,8 @@ const SMS = {
   reminder: (amt, enrolmentId, dueDate, payLink) =>
     `Dear Customer, your WHP GMS payment of Rs.${amt} for scheme ${enrolmentId} is due on ${dueDate}. Pay now: ${payLink} or set up autopay. - WHP Jewellers`,
 
-  autoDebitSuccess: (amt, enrolmentId, monthNum, remaining) =>
-    `Dear Customer, Rs.${amt} collected via UPI for WHP GMS scheme ${enrolmentId} Month ${monthLabel}. ${remaining} payments remaining. - WHP Jewellers`,
+ autoDebitSuccess: (amt, enrolmentId, monthLabel, remaining) =>
+  `Dear Customer, Rs.${amt} collected via UPI for WHP GMS scheme ${enrolmentId} Month ${monthLabel}. ${remaining} payments remaining. - WHP Jewellers`,
 
   autoDebitFailed: (amt, monthNum) =>
     `Dear Customer, your WHP GMS payment of Rs.${amt} for Month ${monthNum} could not be collected. Please pay at branch or retry. - WHP Jewellers`,
