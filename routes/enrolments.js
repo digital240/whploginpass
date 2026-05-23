@@ -228,8 +228,13 @@ await sendSms(cp, SMS.enrolStore(enrolmentId, Math.round(parseFloat(amt))), 'enr
 
         console.log(`[GMS] Subscription created: ${subscription.id} for ${enrolmentId}`);
 
-        // Send mandate link via SMS as backup
-       await sendSms(cp, SMS.mandateLink(subscription.short_url), 'mandateLink');
+// SMS 1 — Enrolment confirmation
+await sendSms(cp, SMS.enrolUpi(
+  enrolmentId,
+  Math.round(parseFloat(amt)),
+  paymo,
+  Math.round(parseFloat(redeem))
+), 'enrolUpi');
 
       } catch(rzpErr) {
         console.error('[GMS] Razorpay error:', rzpErr.message);
