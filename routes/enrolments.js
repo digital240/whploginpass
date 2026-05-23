@@ -1,7 +1,7 @@
 // routes/enrolments.js — Create, list, search, detail
 const db      = require('../db');
 const { staffAuth }                           = require('../helpers/auth');
-const { sendSms }                             = require('../helpers/sms');
+const { sendSms, SMS } = require('../helpers/sms');
 const { genId, cleanPhone, toMysqlDate, createPaymentSchedule } = require('../helpers/utils');
 
 module.exports = function(app, cache) {
@@ -150,9 +150,10 @@ module.exports = function(app, cache) {
           'INSERT INTO gms_notifications (enrolment_id, phone, type, message, status) VALUES (?,?,?,?,?)',
           [enrolmentId, cp, 'Enrolment', `Enrolled. Monthly: Rs.${amt}. Tenure: ${tenure}mo. Maturity: ${mDate}`, 'Sent']
         );
-        await sendSms(cp,
-          `Dear Customer, you have successfully enrolled in WHP Golden Moments Scheme. Enrolment ID: ${enrolmentId}. Monthly: Rs.${amt} x ${paymo} months. Maturity: ${mDate}. - WHP Jewellers`
-        );
+       // REPLACE WITH:
+const { SMS } = require('../helpers/sms');
+await sendSms(cp, SMS.enrolStore(enrolmentId, Math.round(parseFloat(amt))), 'enrolStore');
+
         cache.del(`otp:${cp}`);
         return res.json({ success: true, enrolmentId, message: 'Enrolment successful!', razorpay: null });
       }
@@ -228,9 +229,7 @@ module.exports = function(app, cache) {
         console.log(`[GMS] Subscription created: ${subscription.id} for ${enrolmentId}`);
 
         // Send mandate link via SMS as backup
-        await sendSms(cp,
-          `Dear Customer, complete your WHP GMS enrolment by approving the UPI mandate: ${subscription.short_url} - WHP Jewellers`
-        );
+       await sendSms(cp, SMS.mandateLink(subscription.short_url), 'mandateLink');
 
       } catch(rzpErr) {
         console.error('[GMS] Razorpay error:', rzpErr.message);
@@ -239,9 +238,7 @@ module.exports = function(app, cache) {
           `UPDATE gms_enrolments SET status='Active', pay_method='Pay at Store' WHERE enrolment_id=?`,
           [enrolmentId]
         );
-        await sendSms(cp,
-          `Dear Customer, enrolled in WHP GMS. Enrolment ID: ${enrolmentId}. Monthly: Rs.${amt}. Please pay at store. - WHP Jewellers`
-        );
+        await sendSms(cp, SMS.enrolStore(enrolmentId, Math.round(parseFloat(amt))), 'enrolStore');
         cache.del(`otp:${cp}`);
         return res.json({ success: true, enrolmentId, message: 'Enrolment successful! Please pay at store.', razorpay: null });
       }
