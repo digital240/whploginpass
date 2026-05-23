@@ -367,7 +367,7 @@ module.exports = function(app, cache) {
 
         await sendSms(
           enrol.phone,
-          SMS.reminder(enrol.instalment_amt, enrol.enrolment_id, dueStr, payUrl),
+          SMS.reminder(Math.round(parseFloat(enrol.instalment_amt)), enrol.enrolment_id, dueStr, payUrl),
           'reminder'
         );
 
