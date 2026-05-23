@@ -32,7 +32,7 @@ const SMS = {
     `Dear Customer, your WHP GMS scheme ${enrolmentId} is now ACTIVE! Rs.${amt} will be auto-debited every month. - WHP Jewellers`,
 
   reminder: (amt, enrolmentId, dueDate, payLink) =>
-    `Dear Customer, your WHP GMS payment of Rs.${amt} for scheme ${enrolmentId} is due on ${dueDate}. Pay now: ${payLink} or set up autopay. - WHP Jewellers`,
+    `Dear Customer, your WHP GMS payment of Rs.${Math.round(parseFloat(amt))} for scheme ${enrolmentId} is due on ${dueDate}. Pay now: ${payLink} or set up autopay. - WHP Jewellers`,
 
  autoDebitSuccess: (amt, enrolmentId, monthLabel, remaining) =>
    `Dear Customer, Rs.${amt} collected via UPI for WHP GMS scheme ${enrolmentId} Month ${monthLabel}. ${remaining} payment(s) remaining. - WHP Jewellers`,
