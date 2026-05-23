@@ -235,7 +235,7 @@ await sendSms(cp, SMS.enrolUpi(
   paymo,
   Math.round(parseFloat(redeem))
 ), 'enrolUpi');
-
+// mandateLink removed — sends only when staff resends or customer sets up autopay later
       } catch(rzpErr) {
         console.error('[GMS] Razorpay error:', rzpErr.message);
         // Razorpay failed — convert to store payment so enrolment is not lost
