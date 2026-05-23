@@ -36,7 +36,7 @@ const SMS = {
 
   autoDebitSuccess: (amt, enrolmentId, monthLabel, remaining) =>
     autoDebitSuccess: (amt, enrolmentId, monthLabel, remaining) =>
-  `Dear Customer, Rs.${amt} collected via UPI for WHP GMS scheme ${enrolmentId} Month ${monthLabel}. ${remaining} payment's remaining. - WHP Jewellers`,
+  `Dear Customer, Rs.${amt} collected via UPI for WHP GMS scheme ${enrolmentId} Month ${monthLabel}. ${remaining} payments remaining. - WHP Jewellers`,
 
   autoDebitFailed: (amt, monthLabel) =>
     `Dear Customer, your WHP GMS payment of Rs.${amt} for Month ${monthLabel} could not be collected. Please pay at branch or retry. - WHP Jewellers`,
