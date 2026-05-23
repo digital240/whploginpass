@@ -73,7 +73,7 @@ async function markMonthPaidAuto(enrolmentId, monthNum, paymentId, amount) {
     await sendSms(enrol.phone, SMS.matured(enrolmentId, Math.round(parseFloat(enrol.total_redeemable))), 'matured');
   } else {
     const monthLabel = getMonthLabel(enrol.enrolment_date || enrol.created_at, monthNum);
-    const amt        = Math.round(amount / 100);
+    const amt = amount > 1000 ? Math.round(amount / 100) : Math.round(amount);
     await sendSms(enrol.phone, SMS.autoDebitSuccess(amt, enrolmentId, monthLabel, Math.max(0, pending)), 'autoDebitSuccess');
   }
 
