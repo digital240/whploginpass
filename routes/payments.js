@@ -5,10 +5,10 @@ const { staffAuth }    = require('../helpers/auth');
 const { sendSms, SMS } = require('../helpers/sms');
 const { generateOtp }  = require('../helpers/utils');
 
-const payOtpCache = new NodeCache({ stdTTL: 300 }); // 5 min OTP expiry
+const payOtpCache = new NodeCache({ stdTTL: 300 });
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function getMonthName(enrolDate, monthNum) {
+function getMonthLabel(enrolDate, monthNum) {
   const start = new Date(enrolDate);
   const d = new Date(start.getFullYear(), start.getMonth() + (monthNum - 1), 1);
   return MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear();
@@ -36,12 +36,13 @@ module.exports = function(app) {
       );
       if (!payRows.length) return res.status(400).json({ success: false, message: `Month ${monthNum} is not pending.` });
 
-      const otp = generateOtp();
-      const key = `pay_otp:${enrolmentId}:${monthNum}`;
+      const otp      = generateOtp();
+      const key      = `pay_otp:${enrolmentId}:${monthNum}`;
       payOtpCache.set(key, { otp, branch: req.staff.branch, by: req.staff.username });
 
-      // ── Use 'otp' template — exact DLT approved text
-      await sendSms(enrol.phone, SMS.otp(otp), 'otp');
+      // ── markPaidOtp template — correct DLT approved text
+      const mLabel = getMonthLabel(enrol.enrolment_date || enrol.created_at, monthNum);
+      await sendSms(enrol.phone, SMS.markPaidOtp(enrolmentId, mLabel, otp), 'markPaidOtp');
 
       console.log(`[GMS] Pay OTP sent for ${enrolmentId} M${monthNum} to ${enrol.phone}`);
       return res.json({ success: true, message: `OTP sent to customer's mobile ending ${enrol.phone.slice(-4)}` });
@@ -111,10 +112,17 @@ module.exports = function(app) {
          `OTP verified. Late fee: ${lateFee||0}. Notes: ${notes||''}`]
       );
 
+      const monthLabel = getMonthLabel(enrol.enrolment_date || enrol.created_at, monthNum);
       if (allDone) {
-        await sendSms(enrol.phone, SMS.matured(enrolmentId, enrol.total_redeemable), 'matured');
+        await sendSms(enrol.phone, SMS.matured(enrolmentId, Math.round(parseFloat(enrol.total_redeemable))), 'matured');
       } else {
-        await sendSms(enrol.phone, SMS.autoDebitSuccess(enrol.instalment_amt, enrolmentId, monthNum, Math.max(0, pending)), 'autoDebitSuccess');
+        // Store payment — use storePaySuccess template
+        await sendSms(enrol.phone, SMS.storePaySuccess(
+          Math.round(parseFloat(enrol.instalment_amt)),
+          enrolmentId,
+          monthLabel,
+          Math.max(0, pending)
+        ), 'storePaySuccess');
       }
 
       return res.json({
@@ -179,10 +187,16 @@ module.exports = function(app) {
          `Late fee: ${lateFee||0}. Notes: ${notes||''}`]
       );
 
+      const monthLabel = getMonthLabel(enrol.enrolment_date || enrol.created_at, monthNum);
       if (allDone) {
-        await sendSms(enrol.phone, SMS.matured(enrolmentId, enrol.total_redeemable), 'matured');
+        await sendSms(enrol.phone, SMS.matured(enrolmentId, Math.round(parseFloat(enrol.total_redeemable))), 'matured');
       } else {
-        await sendSms(enrol.phone, SMS.autoDebitSuccess(enrol.instalment_amt, enrolmentId, monthNum, Math.max(0, pending)), 'autoDebitSuccess');
+        await sendSms(enrol.phone, SMS.storePaySuccess(
+          Math.round(parseFloat(enrol.instalment_amt)),
+          enrolmentId,
+          monthLabel,
+          Math.max(0, pending)
+        ), 'storePaySuccess');
       }
 
       return res.json({
@@ -199,6 +213,11 @@ module.exports = function(app) {
   app.post('/api/gms-apply-late-fee', staffAuth, async (req, res) => {
     try {
       const { enrolmentId, monthNum, amount, reason } = req.body;
+
+      const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+      if (!enrolRows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
+      const enrol = enrolRows[0];
+
       await db.query(
         'INSERT INTO gms_late_fees (enrolment_id, month_num, amount, reason, applied_by) VALUES (?,?,?,?,?)',
         [enrolmentId, monthNum, amount, reason||'', req.staff.username]
@@ -209,6 +228,15 @@ module.exports = function(app) {
         [enrolmentId, 'Late fee applied', req.staff.username, req.staff.branch||'Admin',
          `Month ${monthNum}: Rs.${amount}. Reason: ${reason}`]
       );
+
+      // ── lateFee SMS
+      const monthLabel = getMonthLabel(enrol.enrolment_date || enrol.created_at, monthNum);
+      await sendSms(enrol.phone, SMS.lateFee(
+        Math.round(parseFloat(amount)),
+        enrolmentId,
+        monthLabel
+      ), 'lateFee');
+
       return res.json({ success: true, message: `Late fee of Rs.${amount} applied.` });
     } catch(err) {
       return res.status(500).json({ success: false, message: err.message });
@@ -235,7 +263,6 @@ module.exports = function(app) {
         [enrolmentId, 'Scheme Discontinued', req.staff.username, req.staff.branch||'Admin',
          `Reason: ${reason||'Not specified'}`]
       );
-
       await sendSms(enrol.phone, SMS.discontinued(enrolmentId), 'discontinued');
 
       return res.json({ success: true, message: `Scheme ${enrolmentId} discontinued.` });
@@ -260,39 +287,33 @@ module.exports = function(app) {
       }
 
       const [existing] = await db.query(
-        "SELECT id FROM gms_discontinue_requests WHERE enrolment_id=? AND status='Pending'",
-        [enrolmentId]
+        "SELECT id FROM gms_discontinue_requests WHERE enrolment_id=? AND status='Pending'", [enrolmentId]
       );
-      if (existing.length) return res.status(400).json({ success: false, message: 'A pending request already exists for this scheme.' });
+      if (existing.length) return res.status(400).json({ success: false, message: 'A pending request already exists.' });
 
       const [paidRows] = await db.query(
-        "SELECT COUNT(*) as paid FROM gms_payments WHERE enrolment_id=? AND status='Paid'",
-        [enrolmentId]
+        "SELECT COUNT(*) as paid FROM gms_payments WHERE enrolment_id=? AND status='Paid'", [enrolmentId]
       );
       const paidMonths   = paidRows[0].paid;
       const totalPaid    = paidMonths * parseFloat(enrol.instalment_amt);
-      const deduction    = totalPaid * 0.03;
-      const refundAmount = Math.round(totalPaid - deduction);
+      const refundAmount = Math.round(totalPaid - (totalPaid * 0.03));
 
       await db.query(
-        `INSERT INTO gms_discontinue_requests 
-         (enrolment_id, requested_by, branch, reason, refund_amount, status)
+        `INSERT INTO gms_discontinue_requests (enrolment_id, requested_by, branch, reason, refund_amount, status)
          VALUES (?,?,?,?,?,'Pending')`,
         [enrolmentId, req.staff.username, req.staff.branch||'Admin', reason, refundAmount]
       );
-
       await db.query(
         'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
         [enrolmentId, 'Discontinue Requested', req.staff.username, req.staff.branch||'Admin',
          `Reason: ${reason}. Refund estimate: Rs.${refundAmount}`]
       );
 
-      // Inform customer request is raised — use discontinued template (closest match)
+      // Inform customer — use discontinued template (closest match until discontinueRequest template registered)
       await sendSms(enrol.phone, SMS.discontinued(enrolmentId), 'discontinued');
 
       return res.json({
-        success: true,
-        refundAmount,
+        success: true, refundAmount,
         message: `Discontinue request submitted. Estimated refund: ₹${refundAmount.toLocaleString('en-IN')} (after 3% deduction).`
       });
     } catch(err) {
@@ -329,7 +350,6 @@ module.exports = function(app) {
       const [reqRows] = await db.query('SELECT * FROM gms_discontinue_requests WHERE id=?', [requestId]);
       if (!reqRows.length) return res.status(404).json({ success: false, message: 'Request not found.' });
       const request = reqRows[0];
-
       if (request.status !== 'Pending') return res.status(400).json({ success: false, message: 'Request already reviewed.' });
 
       const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [request.enrolment_id]);
@@ -337,8 +357,7 @@ module.exports = function(app) {
       const enrol = enrolRows[0];
 
       await db.query(
-        `UPDATE gms_discontinue_requests 
-         SET status=?, admin_notes=?, reviewed_by=?, reviewed_at=NOW() WHERE id=?`,
+        `UPDATE gms_discontinue_requests SET status=?, admin_notes=?, reviewed_by=?, reviewed_at=NOW() WHERE id=?`,
         [action, adminNotes||'', req.staff.username, requestId]
       );
 
@@ -381,15 +400,18 @@ module.exports = function(app) {
       if (key !== process.env.GMS_CRON_KEY) return res.status(401).json({ success: false, message: 'Unauthorized.' });
 
       const today = new Date();
-      const BASE  = 'https://yellowgreen-jay-842557.hostingersite.com';
+      const BASE  = 'https://gms.whpjewellers.com';
 
       const [schemes] = await db.query(`
         SELECT e.*,
           (SELECT month_num FROM gms_payments WHERE enrolment_id=e.enrolment_id AND status='Pending' ORDER BY month_num ASC LIMIT 1) as next_pending_month
         FROM gms_enrolments e
         WHERE e.status='Active'
-          AND e.pay_method IN ('Pay at Store', 'UPI One-time')
           AND e.payments_pending > 0
+          AND (
+            e.pay_method IN ('Pay at Store', 'UPI One-time')
+            OR (e.pay_method = 'UPI Auto-debit' AND e.razorpay_sub_status != 'active')
+          )
       `);
 
       let sent = 0;
@@ -402,12 +424,16 @@ module.exports = function(app) {
         const diffDays   = Math.round((dueDate - today) / (1000 * 60 * 60 * 24));
 
         if (diffDays === 5 || diffDays === 0) {
-          const payLink    = `${BASE}/api/razorpay/pay-now/${scheme.enrolment_id}`;
-          const dueDateStr = dueDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          // DD/MM/YYYY format — matches DLT approved variable
+          const dd      = String(dueDate.getDate()).padStart(2, '0');
+          const mm      = String(dueDate.getMonth() + 1).padStart(2, '0');
+          const yyyy    = dueDate.getFullYear();
+          const dueStr  = `${dd}/${mm}/${yyyy}`;
+          const payLink = `${BASE}/pay/${scheme.enrolment_id.slice(-8).toLowerCase()}`;
 
           await sendSms(
             scheme.phone,
-            SMS.reminder(scheme.instalment_amt, scheme.enrolment_id, dueDateStr, payLink),
+            SMS.reminder(scheme.instalment_amt, scheme.enrolment_id, dueStr, payLink),
             'reminder'
           );
 
@@ -417,7 +443,7 @@ module.exports = function(app) {
           await db.query(
             'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
             [scheme.enrolment_id, 'Payment Reminder Sent', 'system', 'Auto',
-             `Due on ${dueDateStr}. Month ${scheme.next_pending_month}. SMS sent to ${scheme.phone}`]
+             `Due on ${dueStr}. Month ${scheme.next_pending_month}. SMS sent to ${scheme.phone}`]
           );
         }
       }
