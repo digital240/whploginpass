@@ -73,11 +73,29 @@ async function markMonthPaidAuto(enrolmentId, monthNum, paymentId, amount) {
     await sendSms(enrol.phone, SMS.matured(enrolmentId, Math.round(parseFloat(enrol.total_redeemable))), 'matured');
   } else {
     const monthLabel = getMonthLabel(enrol.enrolment_date || enrol.created_at, monthNum);
-    const amt = amount > 1000 ? Math.round(amount / 100) : Math.round(amount);
+    const amt        = amount > 1000 ? Math.round(amount / 100) : Math.round(amount);
     await sendSms(enrol.phone, SMS.autoDebitSuccess(amt, enrolmentId, monthLabel, Math.max(0, pending)), 'autoDebitSuccess');
   }
 
   return { made, pending: Math.max(0, pending), status };
+}
+
+// ── Autopay nudge helper — sends mandateLink after single payment ──
+async function sendAutopayNudge(enrolmentId, phone) {
+  try {
+    const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+    const fe = rows[0];
+    if (!fe?.razorpay_subscription_id) return;
+    // Only nudge if NOT already on active autopay
+    if (fe.pay_method === 'UPI Auto-debit' && fe.razorpay_sub_status === 'active') return;
+    const sub = await rzp.subscriptions.fetch(fe.razorpay_subscription_id);
+    if (sub.short_url && ['created', 'authenticated', 'pending'].includes(sub.status)) {
+      await sendSms(phone, SMS.mandateLink(sub.short_url), 'mandateLink');
+      console.log(`[GMS] Autopay nudge sent to ${phone}`);
+    }
+  } catch(e) {
+    console.log('[GMS] Autopay nudge (non-critical):', e.message);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -105,7 +123,7 @@ module.exports = function(app, cache) {
         }
       });
 
-      const startAt    = Math.floor(Date.now() / 1000) + 60;
+      const startAt      = Math.floor(Date.now() / 1000) + 60;
       const subscription = await rzp.subscriptions.create({
         plan_id: plan.id, total_count: remainingMonths, quantity: 1,
         start_at: startAt, customer_notify: 1, addons: [],
@@ -497,6 +515,11 @@ module.exports = function(app, cache) {
         parseFloat(enrol.instalment_amt) * 100
       );
 
+      // ── Autopay nudge — remind user to set up autopay after single payment
+      if (result?.status !== 'Matured') {
+        await sendAutopayNudge(enrolmentId, enrol.phone);
+      }
+
       return res.json({
         success: true, message: `Month ${monthNum} payment verified!`,
         made: result?.made, status: result?.status
@@ -640,6 +663,8 @@ module.exports = function(app, cache) {
           SMS.autoDebitSuccess(Math.round(parseFloat(enrol.instalment_amt)), enrolmentId, pnMonthLabel, Math.max(0, pending)),
           'autoDebitSuccess'
         );
+        // ── Autopay nudge — remind user to set up autopay after single payment
+        await sendAutopayNudge(enrolmentId, enrol.phone);
       }
 
       return res.json({ success: true });
@@ -696,7 +721,8 @@ module.exports = function(app, cache) {
         [plan.id, sub.id, enrolmentId]
       );
 
-      await sendSms(enrol.phone, SMS.mandateLink(sub.short_url), 'mandateLink');
+      // No mandateLink SMS here — Razorpay checkout opens directly in browser
+      // schemeActive SMS fires via webhook when mandate approved
 
       return res.json({ success: true, subscriptionId: sub.id, shortUrl: sub.short_url, currentMonthPending });
     } catch(err) {
