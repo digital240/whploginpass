@@ -2,22 +2,28 @@
 const axios = require('axios');
 
 const TEMPLATES = {
-  otp:              '1707164361822841747',
-  enrolUpi:         '1707177944216513670',
-  enrolStore:       '1707177944226842360',
-  mandateLink:      '1707177944335144547',
-  schemeActive:     '1707177944342071213',
-  reminder:         '1707177944355425301',
-  autoDebitSuccess: '1707177944381570622',
-  autoDebitFailed:  '1707177944406782086',
-  halted:           '1707177944411338921',
-  matured:          '1707177944419180619',
-  discontinued:     '1707177944427332534',
+  otp:              '1707164361822841747', // Login OTP
+  markPaidOtp:      '1707177951693466126', // Branch mark paid OTP
+  enrolUpi:         '1707177944216513670', // Enrolment - UPI
+  enrolStore:       '1707177944226842360', // Enrolment - Store
+  mandateLink:      '1707177944335144547', // UPI Mandate Link
+  schemeActive:     '1707177944342071213', // Scheme Activated
+  reminder:         '1707177954096584065', // Payment Reminder (gms.whpjewellers.com approved)
+  autoDebitSuccess: '1707177944381570622', // UPI Auto-debit Success
+  storePaySuccess:  '1707177969896672521', // Store Payment Success
+  autoDebitFailed:  '1707177944406782086', // Auto-debit Failed
+  halted:           '1707177944411338921', // Subscription Halted
+  matured:          '1707177944419180619', // Scheme Matured
+  discontinued:     '1707177944427332534', // Discontinued
+  lateFee:          '1707177969904961261', // Late Fee Applied
 };
 
 const SMS = {
   otp: (otp) =>
     `Dear user, your WHP Jewellers otp code is ${otp}`,
+
+  markPaidOtp: (enrolmentId, monthLabel, otp) =>
+    `Dear Customer, WHP branch manager is processing payment for scheme ${enrolmentId} Month ${monthLabel}. OTP: ${otp}. Valid 5 mins. Share only with staff - WHP Jewellers`,
 
   enrolUpi: (enrolmentId, amt, payMo, redeemable) =>
     `Dear Customer, you have enrolled in WHP Golden Moments Scheme. ID: ${enrolmentId}. Monthly: Rs.${amt} x ${payMo} months. Redeemable: Rs.${redeemable}. - WHP Jewellers`,
@@ -34,8 +40,11 @@ const SMS = {
   reminder: (amt, enrolmentId, dueDate, payLink) =>
     `Dear Customer, your WHP GMS payment of Rs.${Math.round(parseFloat(amt))} for scheme ${enrolmentId} is due on ${dueDate}. Pay now: ${payLink} or set up autopay. - WHP Jewellers`,
 
- autoDebitSuccess: (amt, enrolmentId, monthLabel, remaining) =>
-   `Dear Customer, Rs.${amt} collected via UPI for WHP GMS scheme ${enrolmentId} Month ${monthLabel}. ${remaining} payment(s) remaining. - WHP Jewellers`,
+  autoDebitSuccess: (amt, enrolmentId, monthLabel, remaining) =>
+    `Dear Customer, Rs.${amt} collected via UPI for WHP GMS scheme ${enrolmentId} Month ${monthLabel}. ${remaining} payment(s) remaining. - WHP Jewellers`,
+
+  storePaySuccess: (amt, enrolmentId, monthLabel, remaining) =>
+    `Dear Customer, Rs.${amt} collected at WHP branch for GMS scheme ${enrolmentId} Month ${monthLabel}. ${remaining} payment(s) remaining. - WHP Jewellers`,
 
   autoDebitFailed: (amt, monthLabel) =>
     `Dear Customer, your WHP GMS payment of Rs.${amt} for Month ${monthLabel} could not be collected. Please pay at branch or retry. - WHP Jewellers`,
@@ -48,17 +57,15 @@ const SMS = {
 
   discontinued: (enrolmentId) =>
     `Dear Customer, your WHP GMS scheme ${enrolmentId} has been discontinued. Refund will be processed within 30 days. Contact branch for details. - WHP Jewellers`,
+
+  lateFee: (amt, enrolmentId, monthLabel) =>
+    `Dear Customer, a late fee of Rs.${amt} has been applied to your WHP GMS scheme ${enrolmentId} for Month ${monthLabel}. - WHP Jewellers`,
 };
 
 async function sendSms(phone, message, templateKey) {
   try {
     const templateId = TEMPLATES[templateKey] || TEMPLATES.otp;
-
-    // ── Debug log — print exact text being sent
     console.log(`[SMS] Sending [${templateKey}] to ${phone}`);
-    console.log(`[SMS] Text: "${message}"`);
-    console.log(`[SMS] Template ID: ${templateId}`);
-
     const response = await axios.post('https://www.smsalert.co.in/api/push.json', null, {
       params: {
         apikey:      process.env.SMSALERT_API_KEY,
@@ -70,14 +77,10 @@ async function sendSms(phone, message, templateKey) {
       },
       timeout: 10000
     });
-
     console.log(`[SMS] Sent to ${phone} [${templateKey}]`);
-    console.log(`[SMS] Response:`, JSON.stringify(response.data));
   } catch(e) {
     console.error('[SMS] Failed:', e.message);
-    // ── Print full error response from SMSAlert
     if (e.response) {
-      console.error('[SMS] Status:', e.response.status);
       console.error('[SMS] Error body:', JSON.stringify(e.response.data));
     }
   }
