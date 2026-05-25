@@ -65,7 +65,10 @@ const SMS = {
 async function sendSms(phone, message, templateKey) {
   try {
     const templateId = TEMPLATES[templateKey] || TEMPLATES.otp;
+    // ── Debug log — print exact text being sent
     console.log(`[SMS] Sending [${templateKey}] to ${phone}`);
+    console.log(`[SMS] Text: "${message}"`);
+    console.log(`[SMS] Template ID: ${templateId}`);
     const response = await axios.post('https://www.smsalert.co.in/api/push.json', null, {
       params: {
         apikey:      process.env.SMSALERT_API_KEY,
@@ -78,12 +81,14 @@ async function sendSms(phone, message, templateKey) {
       timeout: 10000
     });
     console.log(`[SMS] Sent to ${phone} [${templateKey}]`);
+    console.log(`[SMS] Response:`, JSON.stringify(response.data));
   } catch(e) {
     console.error('[SMS] Failed:', e.message);
+    // ── Print full error response from SMSAlert
     if (e.response) {
+      console.error('[SMS] Status:', e.response.status);
       console.error('[SMS] Error body:', JSON.stringify(e.response.data));
     }
   }
 }
-
 module.exports = { sendSms, TEMPLATES, SMS };
