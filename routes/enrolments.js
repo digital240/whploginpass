@@ -144,15 +144,16 @@ module.exports = function(app, cache) {
         } catch(e) { console.log('[GMS] Address sync error:', e.message); }
       }
 
-      // ── Store payment → send SMS immediately ──
+     // ── Store payment → send SMS immediately ──
       if (pay !== 'upi') {
         await db.query(
           'INSERT INTO gms_notifications (enrolment_id, phone, type, message, status) VALUES (?,?,?,?,?)',
           [enrolmentId, cp, 'Enrolment', `Enrolled. Monthly: Rs.${amt}. Tenure: ${tenure}mo. Maturity: ${mDate}`, 'Sent']
         );
-       // REPLACE WITH:
- 
-await sendSms(cp, SMS.enrolStore(enrolmentId, Math.round(parseFloat(amt))), 'enrolStore');
+        // SMS 1 — Enrolment confirmation
+        await sendSms(cp, SMS.enrolStore(enrolmentId, Math.round(parseFloat(amt))), 'enrolStore');
+        // SMS 2 — Scheme active (store schemes activate immediately)
+        await sendSms(cp, SMS.schemeActive(enrolmentId, Math.round(parseFloat(amt))), 'schemeActive');
 
         cache.del(`otp:${cp}`);
         return res.json({ success: true, enrolmentId, message: 'Enrolment successful!', razorpay: null });
