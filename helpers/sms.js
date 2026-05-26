@@ -76,7 +76,8 @@ async function sendSms(phone, message, templateKey) {
         mobileno:    phone,
         text:        message,
         route:       'transscrub',
-        template_id: templateId
+        template_id: templateId,
+        shortenurl:  1  
       },
       timeout: 30000
     });
