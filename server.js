@@ -146,3 +146,8 @@ async function sendPendingNudges() {
 
 // ── Run nudge sender every 30 minutes ──
 cron.schedule('*/30 * * * *', sendPendingNudges);
+
+app.get('/api/test-nudge', async (req, res) => {
+  await sendPendingNudges();
+  res.json({ done: true });
+});
