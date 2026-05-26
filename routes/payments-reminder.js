@@ -230,9 +230,12 @@ module.exports = function(app, cache) {
       for (const enrol of enrolments) {
         const enrollDate = new Date(enrol.enrolment_date || enrol.created_at);
         const dueDay     = enrollDate.getDate();
-        const isDueIn5   = dueDay === in5Day;
-        const isDueToday = dueDay === todayDay;
-        if (!isDueIn5 && !isDueToday) continue;
+      // Due today OR overdue (due date already passed this month)
+const isDueIn5   = dueDay === in5Day;
+const isDueToday = dueDay === todayDay;
+const isOverdue  = dueDay < todayDay; // due date already passed this month
+
+if (!isDueIn5 && !isDueToday && !isOverdue) continue;
 
         const pendingPay = await getCurrentPendingMonth(enrol.enrolment_id);
         if (!pendingPay) continue;
