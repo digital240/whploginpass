@@ -112,3 +112,37 @@ function triggerReminders() {
 }
 
 cron.schedule('30 3 * * *', triggerReminders, { timezone: 'Asia/Kolkata' });
+
+
+async function sendPendingNudges() {
+  try {
+    const db = require('./db');
+    const { sendSms, SMS } = require('./helpers/sms');
+    const [nudges] = await db.query(
+      `SELECT * FROM gms_pending_nudges 
+       WHERE sent=0 AND send_after <= NOW()
+       LIMIT 50`
+    );
+    for (const nudge of nudges) {
+      // Check if user already set up autopay — don't nudge if active
+      const [enrolRows] = await db.query(
+        'SELECT razorpay_sub_status FROM gms_enrolments WHERE enrolment_id=?',
+        [nudge.enrolment_id]
+      );
+      const enrol = enrolRows[0];
+      if (enrol?.razorpay_sub_status !== 'active') {
+        await sendSms(nudge.phone, SMS.mandateLink(nudge.short_url), 'mandateLink');
+        console.log(`[GMS Nudge] Sent to ${nudge.phone} for ${nudge.enrolment_id}`);
+      } else {
+        console.log(`[GMS Nudge] Skipped ${nudge.enrolment_id} — autopay already active`);
+      }
+      // Mark as sent regardless
+      await db.query('UPDATE gms_pending_nudges SET sent=1 WHERE id=?', [nudge.id]);
+    }
+  } catch(e) {
+    console.error('[GMS Nudge] Error:', e.message);
+  }
+}
+
+// ── Run nudge sender every 30 minutes ──
+cron.schedule('*/30 * * * *', sendPendingNudges);
