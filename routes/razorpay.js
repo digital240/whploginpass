@@ -84,15 +84,41 @@ async function sendAutopayNudge(enrolmentId, phone) {
   try {
     const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
     const fe = rows[0];
-    if (!fe?.razorpay_subscription_id) return;
-    // Skip if already on active autopay
+    if (!fe) return;
     if (fe.razorpay_sub_status === 'active') return;
-    const sub = await rzp.subscriptions.fetch(fe.razorpay_subscription_id);
-    if (sub.short_url && ['created', 'authenticated', 'pending'].includes(sub.status)) {
+
+    let shortUrl = null;
+
+    if (fe.razorpay_subscription_id) {
+      const sub = await rzp.subscriptions.fetch(fe.razorpay_subscription_id);
+      if (['created', 'authenticated', 'pending'].includes(sub.status)) {
+        shortUrl = sub.short_url;
+      } else {
+        // ── Old subscription expired — create fresh one for nudge
+        console.log(`[GMS] Old sub ${sub.status} — creating fresh for nudge`);
+        const plan = await rzp.plans.create({
+          period: process.env.GMS_PLAN_PERIOD || 'monthly', interval: 1,
+          item: { name: `WHP GMS ${enrolmentId}`, amount: Math.round(parseFloat(fe.instalment_amt) * 100), currency: 'INR' }
+        });
+        const newSub = await rzp.subscriptions.create({
+          plan_id: plan.id, total_count: parseInt(fe.payments_pending) || 1,
+          quantity: 1, start_at: Math.floor(Date.now() / 1000) + 60,
+          customer_notify: 1, notes: { enrolmentId, type: 'nudge_refresh' }
+        });
+        await db.query(
+          "UPDATE gms_enrolments SET razorpay_plan_id=?, razorpay_subscription_id=?, razorpay_sub_status='created' WHERE enrolment_id=?",
+          [plan.id, newSub.id, enrolmentId]
+        );
+        shortUrl = newSub.short_url;
+        console.log(`[GMS] Fresh subscription for nudge: ${newSub.id}`);
+      }
+    }
+
+    if (shortUrl) {
       await db.query(
         `INSERT INTO gms_pending_nudges (enrolment_id, phone, short_url, send_after)
          VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 2 HOUR))`,
-        [enrolmentId, phone, sub.short_url]
+        [enrolmentId, phone, shortUrl]
       );
       console.log(`[GMS] Autopay nudge scheduled for ${phone} in 2 hours`);
     }
