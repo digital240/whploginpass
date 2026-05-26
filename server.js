@@ -151,3 +151,16 @@ app.get('/api/test-nudge', async (req, res) => {
   await sendPendingNudges();
   res.json({ done: true });
 });
+
+
+app.get('/api/check-sub/:enrolmentId', async (req, res) => {
+  try {
+    const db = require('./db');
+    const Razorpay = require('razorpay');
+    const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+    const [rows] = await db.query('SELECT razorpay_subscription_id, razorpay_sub_status FROM gms_enrolments WHERE enrolment_id=?', [req.params.enrolmentId]);
+    if (!rows.length) return res.json({ error: 'Not found' });
+    const sub = await rzp.subscriptions.fetch(rows[0].razorpay_subscription_id);
+    res.json({ db_status: rows[0].razorpay_sub_status, rzp_status: sub.status, short_url: sub.short_url });
+  } catch(e) { res.json({ error: e.message }); }
+});
