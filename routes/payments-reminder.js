@@ -14,7 +14,7 @@ function generatePayToken(enrolmentId, monthNum) {
   return crypto.createHmac('sha256', secret)
     .update(`${enrolmentId}:${monthNum}:paylink`)
     .digest('hex')
-    .slice(0, 6); // 6 chars — matches DLT sample length
+    .slice(0, 16); // 6 chars — matches DLT sample length
 }
 function fmtDue(d) {
   const dd   = String(d.getDate()).padStart(2, '0');
