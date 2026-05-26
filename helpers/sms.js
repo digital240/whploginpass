@@ -78,7 +78,7 @@ async function sendSms(phone, message, templateKey) {
         route:       'transscrub',
         template_id: templateId
       },
-      timeout: 10000
+      timeout: 30000
     });
     console.log(`[SMS] Sent to ${phone} [${templateKey}]`);
     console.log(`[SMS] Response:`, JSON.stringify(response.data));
