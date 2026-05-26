@@ -37,9 +37,12 @@ module.exports = function(app, cache) {
   app.get('/api/gms/pay-link/:token', async (req, res) => {
     try {
       const { token } = req.params;
-      const cached = cache.get(`paylink:${token}`);
-      if (!cached) return res.status(404).json({ success: false, message: 'Payment link expired or invalid.' });
-      const { enrolmentId, monthNum } = cached;
+     const [tokenRows] = await db.query(
+  'SELECT * FROM gms_pay_tokens WHERE token=? AND expires_at > NOW()',
+  [token]
+);
+if (!tokenRows.length) return res.status(404).json({ success: false, message: 'Payment link expired or invalid.' });
+const { enrolment_id: enrolmentId, month_num: monthNum } = tokenRows[0];
       const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
@@ -56,9 +59,12 @@ module.exports = function(app, cache) {
     try {
       const { token } = req.body;
       if (!token) return res.status(400).json({ success: false, message: 'Token required.' });
-      const cached = cache.get(`paylink:${token}`);
-      if (!cached) return res.status(404).json({ success: false, message: 'Payment link expired.' });
-      const { enrolmentId, monthNum } = cached;
+      const [tokenRows] = await db.query(
+  'SELECT * FROM gms_pay_tokens WHERE token=? AND expires_at > NOW()',
+  [token]
+);
+if (!tokenRows.length) return res.status(404).json({ success: false, message: 'Payment link expired.' });
+const { enrolment_id: enrolmentId, month_num: monthNum } = tokenRows[0];
       const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
@@ -239,8 +245,13 @@ if (!isDueIn5 && !isDueToday && !isOverdue) continue;
         const pendingPay = await getCurrentPendingMonth(enrol.enrolment_id);
         if (!pendingPay) continue;
 
-        const token  = generatePayToken(enrol.enrolment_id, pendingPay.month_num);
-        cache.set(`paylink:${token}`, { enrolmentId: enrol.enrolment_id, monthNum: pendingPay.month_num }, 7 * 24 * 60 * 60);
+       const token = generatePayToken(enrol.enrolment_id, pendingPay.month_num);
+await db.query(
+  `INSERT INTO gms_pay_tokens (token, enrolment_id, month_num, expires_at)
+   VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))
+   ON DUPLICATE KEY UPDATE expires_at=DATE_ADD(NOW(), INTERVAL 7 DAY)`,
+  [token, enrol.enrolment_id, pendingPay.month_num]
+);
 
         const BASE_URL = process.env.GMS_BASE_URL || 'https://gms.whpjewellers.com';
         const payUrl   = `${BASE_URL}/pay/${token}`;
