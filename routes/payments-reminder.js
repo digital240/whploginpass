@@ -136,9 +136,11 @@ const { enrolment_id: enrolmentId, month_num: monthNum } = tokenRows[0];
     try {
       const { token } = req.body;
       if (!token) return res.status(400).json({ success: false, message: 'Token required.' });
-      const cached = cache.get(`paylink:${token}`);
-      if (!cached) return res.status(404).json({ success: false, message: 'Payment link expired.' });
-      const { enrolmentId } = cached;
+     const [tokenRows] = await db.query(
+  'SELECT * FROM gms_pay_tokens WHERE token=? AND expires_at > NOW()', [token]
+);
+if (!tokenRows.length) return res.status(404).json({ success: false, message: 'Payment link expired.' });
+const enrolmentId = tokenRows[0].enrolment_id;
       const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
       if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
       const enrol = rows[0];
