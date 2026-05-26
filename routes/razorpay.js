@@ -80,24 +80,26 @@ async function markMonthPaidAuto(enrolmentId, monthNum, paymentId, amount) {
   return { made, pending: Math.max(0, pending), status };
 }
 
-// ── Autopay nudge helper — sends mandateLink after single payment ──
 async function sendAutopayNudge(enrolmentId, phone) {
   try {
     const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
     const fe = rows[0];
     if (!fe?.razorpay_subscription_id) return;
-    // Only nudge if NOT already on active autopay
     if (fe.pay_method === 'UPI Auto-debit' && fe.razorpay_sub_status === 'active') return;
     const sub = await rzp.subscriptions.fetch(fe.razorpay_subscription_id);
     if (sub.short_url && ['created', 'authenticated', 'pending'].includes(sub.status)) {
-      await sendSms(phone, SMS.mandateLink(sub.short_url), 'mandateLink');
-      console.log(`[GMS] Autopay nudge sent to ${phone}`);
+      // ── Store nudge to send after 2 hours — not immediately
+      await db.query(
+        `INSERT INTO gms_pending_nudges (enrolment_id, phone, short_url, send_after)
+         VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 2 HOUR))`,
+        [enrolmentId, phone, sub.short_url]
+      );
+      console.log(`[GMS] Autopay nudge scheduled for ${phone} in 2 hours`);
     }
   } catch(e) {
-    console.log('[GMS] Autopay nudge (non-critical):', e.message);
+    console.log('[GMS] Autopay nudge schedule (non-critical):', e.message);
   }
 }
-
 // ═══════════════════════════════════════════════════════════
 module.exports = function(app, cache) {
 
