@@ -908,6 +908,52 @@ tr:hover td{background:#fdf8f5;}
     </div>
   </div>
 </div>
+<!-- ══ MODAL: CHANGE PAY METHOD ══ -->
+<div class="modal-backdrop" id="chpay-modal" onclick="onBdClick(event,'chpay-modal')">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">Change Payment Method</div>
+        <div style="font-size:12px;color:var(--text-soft);margin-top:3px" id="chpay-sub"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('chpay-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#f5f0ee;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#5a2a32;font-weight:500" id="chpay-info">—</div>
+
+      <div class="fg">
+        <label>New Payment Method</label>
+        <select id="chpay-method">
+          <option value="">Select new method</option>
+          <option value="UPI Auto-debit">UPI Auto-debit (set up mandate)</option>
+          <option value="Pay at Store">Pay at Store</option>
+        </select>
+      </div>
+
+      <!-- OTP verification -->
+      <div style="background:var(--blue-bg);border:1px solid rgba(26,95,168,0.2);border-radius:8px;padding:14px;margin-top:8px">
+        <div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:6px">🔐 Customer OTP Required</div>
+        <div style="font-size:12px;color:var(--text-soft);margin-bottom:10px">Send OTP to customer's mobile to verify they requested this change.</div>
+        <button class="btn btn-outline btn-sm" id="chpay-send-otp-btn" onclick="sendChangePayOtp()" style="width:100%">📱 Send OTP to Customer</button>
+      </div>
+
+      <div id="chpay-otp-section" style="display:none;margin-top:12px">
+        <div class="fg">
+          <label>Enter OTP (from customer)</label>
+          <input type="number" id="chpay-otp" placeholder="6-digit OTP" style="font-size:20px;letter-spacing:0.2em;text-align:center" oninput="if(this.value.length>6)this.value=this.value.slice(0,6)">
+        </div>
+        <div id="chpay-otp-hint" style="font-size:12px;margin-top:4px"></div>
+      </div>
+
+      <input type="hidden" id="chpay-enrol-id">
+      <input type="hidden" id="chpay-phone">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('chpay-modal')">Cancel</button>
+      <button class="btn btn-primary" id="chpay-confirm-btn" onclick="confirmChangePayMethod()" style="display:none">Confirm Change →</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -1193,21 +1239,25 @@ async function openDetail(enrolId) {
           <div class="info-row"><span class="info-label">Email</span><span class="info-val">${e.email||'—'}</span></div>
           <div class="info-row"><span class="info-label">Branch</span><span class="info-val"><span class="badge badge-branch">${e.preferred_branch||'—'}</span></span></div>
           <div class="info-row">
-  <span class="info-label">Pay Method</span>
-  <span class="info-val">
-    ${e.pay_method||'—'}
-    ${e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'active'
-      ? '<span style="background:var(--green-bg);color:var(--green);border-radius:100px;font-size:10px;padding:2px 8px;margin-left:6px;font-weight:700">✓ AUTOPAY ACTIVE</span>'
-      : e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'created'
-      ? '<span style="background:#fff8e8;color:var(--amber);border-radius:100px;font-size:10px;padding:2px 8px;margin-left:6px;font-weight:700">⏳ MANDATE PENDING</span>'
-      : e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'halted'
-      ? '<span style="background:var(--red-bg);color:var(--red);border-radius:100px;font-size:10px;padding:2px 8px;margin-left:6px;font-weight:700">⚠ HALTED</span>'
-      : e.pay_method === 'UPI Single Payment'
-      ? '<span style="background:var(--blue-bg);color:var(--blue);border-radius:100px;font-size:10px;padding:2px 8px;margin-left:6px;font-weight:700">SINGLE PAY</span>'
-      : ''
-    }
-  </span>
-</div>
+            <span class="info-label">Pay Method</span>
+            <span class="info-val" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              ${e.pay_method||'—'}
+              ${e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'active'
+                ? '<span style="background:var(--green-bg);color:var(--green);border-radius:100px;font-size:10px;padding:2px 8px;font-weight:700">✓ AUTOPAY ACTIVE</span>'
+                : e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'created'
+                ? '<span style="background:#fff8e8;color:var(--amber);border-radius:100px;font-size:10px;padding:2px 8px;font-weight:700">⏳ MANDATE PENDING</span>'
+                : e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'halted'
+                ? '<span style="background:var(--red-bg);color:var(--red);border-radius:100px;font-size:10px;padding:2px 8px;font-weight:700">⚠ HALTED</span>'
+                : e.pay_method === 'UPI Single Payment'
+                ? '<span style="background:var(--blue-bg);color:var(--blue);border-radius:100px;font-size:10px;padding:2px 8px;font-weight:700">SINGLE PAY</span>'
+                : ''
+              }
+              ${e.status === 'Active' && canEdit
+                ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 10px" onclick="openChangePayMethod('${enrolId}')">Change</button>`
+                : ''
+              }
+            </span>
+          </div>
         </div>
         <div>
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Scheme Details</div>
@@ -1903,6 +1953,91 @@ async function sendReminderSms(enrolId) {
     if (data.success) showToast('Reminder SMS sent!', 'ok');
     else showToast(data.message || 'Failed.', 'error');
   } catch(e) {
+    showToast('Connection error.', 'error');
+  }
+}
+
+function openChangePayMethod(enrolId) {
+  const enrol = _allEnrolments.find(e => e.enrolment_id === enrolId);
+  if (!enrol) return;
+  document.getElementById('chpay-enrol-id').value = enrolId;
+  document.getElementById('chpay-phone').value    = enrol.phone;
+  document.getElementById('chpay-sub').textContent = enrolId + ' · ' + enrol.name;
+  document.getElementById('chpay-info').textContent = `Current: ${enrol.pay_method||'—'} · Monthly: ₹${Number(enrol.instalment_amt).toLocaleString('en-IN')}`;
+  document.getElementById('chpay-method').value    = '';
+  document.getElementById('chpay-otp').value       = '';
+  document.getElementById('chpay-otp-hint').textContent = '';
+  document.getElementById('chpay-otp-section').style.display  = 'none';
+  document.getElementById('chpay-confirm-btn').style.display  = 'none';
+  document.getElementById('chpay-send-otp-btn').textContent   = '📱 Send OTP to Customer';
+  document.getElementById('chpay-send-otp-btn').disabled      = false;
+  openModal('chpay-modal');
+}
+
+async function sendChangePayOtp() {
+  const enrolId = document.getElementById('chpay-enrol-id').value;
+  const phone   = document.getElementById('chpay-phone').value;
+  const method  = document.getElementById('chpay-method').value;
+  if (!method) { showToast('Select new payment method first.', 'error'); return; }
+
+  const btn = document.getElementById('chpay-send-otp-btn');
+  btn.disabled = true; btn.textContent = 'Sending OTP…';
+
+  try {
+    const res  = await fetch(API + '/api/gms/send-otp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = '📱 Resend OTP';
+    if (data.success) {
+      document.getElementById('chpay-otp-section').style.display = 'block';
+      document.getElementById('chpay-confirm-btn').style.display = 'block';
+      document.getElementById('chpay-otp-hint').textContent = '✓ OTP sent to +91 ' + phone;
+      document.getElementById('chpay-otp-hint').style.color = 'var(--green)';
+      showToast('OTP sent to customer!', 'ok');
+    } else {
+      showToast(data.message || 'Failed to send OTP.', 'error');
+    }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = '📱 Send OTP to Customer';
+    showToast('Connection error.', 'error');
+  }
+}
+
+async function confirmChangePayMethod() {
+  const enrolId = document.getElementById('chpay-enrol-id').value;
+  const phone   = document.getElementById('chpay-phone').value;
+  const method  = document.getElementById('chpay-method').value;
+  const otp     = document.getElementById('chpay-otp').value.trim();
+
+  if (!method) { showToast('Select new payment method.', 'error'); return; }
+  if (!otp || otp.length !== 6) { showToast('Enter 6-digit OTP from customer.', 'error'); return; }
+
+  const btn = document.getElementById('chpay-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Processing…';
+
+  try {
+    const res  = await fetch(API + '/api/gms/change-pay-method', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ enrolmentId: enrolId, phone, otp, newMethod: method })
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = 'Confirm Change →';
+
+    if (data.success) {
+      closeModal('chpay-modal');
+      showToast(data.message || 'Payment method changed!', 'ok');
+      loadEnrolments();
+      openDetail(enrolId);
+    } else {
+      document.getElementById('chpay-otp-hint').textContent = data.message || 'Failed.';
+      document.getElementById('chpay-otp-hint').style.color = 'var(--red)';
+      showToast(data.message || 'Failed.', 'error');
+    }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Confirm Change →';
     showToast('Connection error.', 'error');
   }
 }
