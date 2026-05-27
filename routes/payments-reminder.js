@@ -393,5 +393,84 @@ app.post('/api/gms/send-reminder-manual', async (req, res) => {
   }
 });
 
+  // ── POST /api/gms/change-pay-method ──────────────────────
+app.post('/api/gms/change-pay-method', async (req, res) => {
+  try {
+    const { staffAuth } = require('../helpers/auth');
+    const { enrolmentId, phone, otp, newMethod } = req.body;
+    if (!enrolmentId || !otp || !newMethod) return res.status(400).json({ success: false, message: 'Missing required fields.' });
+
+    // Verify OTP
+    const { sendSms, SMS } = require('../helpers/sms');
+    const NodeCache = require('node-cache');
+
+    const [enrolRows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+    if (!enrolRows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
+    const enrol = enrolRows[0];
+
+    // Verify OTP via user-auth endpoint logic
+    const verifyRes = await fetch(`${process.env.BACKEND_URL || 'http://localhost:' + (process.env.PORT || 4000)}/api/gms/verify-otp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: enrol.phone, otp })
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyData.success) return res.status(400).json({ success: false, message: 'Incorrect OTP. Please try again.' });
+
+    const Razorpay = require('razorpay');
+    const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+
+    if (newMethod === 'Pay at Store') {
+      // Cancel existing subscription if any
+      if (enrol.razorpay_subscription_id) {
+        try {
+          await rzp.subscriptions.cancel(enrol.razorpay_subscription_id, { cancel_at_cycle_end: false });
+        } catch(e) { console.log('[GMS] Cancel sub (ok):', e.message); }
+      }
+      await db.query(
+        "UPDATE gms_enrolments SET pay_method='Pay at Store', razorpay_sub_status='cancelled' WHERE enrolment_id=?",
+        [enrolmentId]
+      );
+      await db.query('INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+        [enrolmentId, 'Pay Method Changed to Store', 'staff', enrol.preferred_branch || 'Admin', 'Customer OTP verified']);
+      return res.json({ success: true, message: 'Switched to store payment. Customer can now pay at branch.' });
+
+    } else if (newMethod === 'UPI Auto-debit') {
+      // Create new subscription
+      const remainingMonths = parseInt(enrol.payments_pending) || 0;
+      if (remainingMonths === 0) return res.status(400).json({ success: false, message: 'No remaining payments.' });
+
+      const plan = await rzp.plans.create({
+        period: process.env.GMS_PLAN_PERIOD || 'monthly', interval: 1,
+        item: { name: `WHP GMS ${enrolmentId}`, amount: Math.round(parseFloat(enrol.instalment_amt) * 100), currency: 'INR' }
+      });
+      const pendingPay = await getCurrentPendingMonth(enrolmentId);
+      const chargeNow  = pendingPay !== null;
+      const startAt    = chargeNow ? Math.floor(Date.now() / 1000) + 60 : Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60);
+      const sub = await rzp.subscriptions.create({
+        plan_id: plan.id, total_count: remainingMonths, quantity: 1,
+        start_at: startAt, customer_notify: 1,
+        notes: { enrolmentId, type: 'pay_method_change' }
+      });
+
+      await db.query(
+        "UPDATE gms_enrolments SET pay_method='UPI Auto-debit', razorpay_plan_id=?, razorpay_subscription_id=?, razorpay_sub_status='created' WHERE enrolment_id=?",
+        [plan.id, sub.id, enrolmentId]
+      );
+      await db.query('INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+        [enrolmentId, 'Pay Method Changed to UPI Auto-debit', 'staff', enrol.preferred_branch || 'Admin', `Sub: ${sub.id}. Customer OTP verified`]);
+
+      // Send mandate link to customer
+      await sendSms(enrol.phone, SMS.mandateLink(sub.short_url), 'mandateLink');
+
+      return res.json({ success: true, message: 'UPI autopay setup initiated. Mandate link sent to customer via SMS.' });
+    }
+
+    return res.status(400).json({ success: false, message: 'Invalid payment method.' });
+  } catch(err) {
+    console.error('[GMS] change-pay-method error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
   console.log('[GMS] Payment reminder routes loaded');
 };
