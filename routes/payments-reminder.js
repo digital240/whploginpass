@@ -344,5 +344,54 @@ await db.query(
     }
   });
 
+  // ── POST /api/gms/send-reminder-manual ───────────────────
+app.post('/api/gms/send-reminder-manual', async (req, res) => {
+  try {
+    const { staffAuth } = require('../helpers/auth');
+    const { enrolmentId } = req.body;
+    if (!enrolmentId) return res.status(400).json({ success: false, message: 'enrolmentId required.' });
+
+    const [rows] = await db.query('SELECT * FROM gms_enrolments WHERE enrolment_id=?', [enrolmentId]);
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
+    const enrol = rows[0];
+
+    const pendingPay = await getCurrentPendingMonth(enrolmentId);
+    if (!pendingPay) return res.status(400).json({ success: false, message: 'No pending payments.' });
+
+    const token = generatePayToken(enrolmentId, pendingPay.month_num);
+    await db.query(
+      `INSERT INTO gms_pay_tokens (token, enrolment_id, month_num, expires_at)
+       VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))
+       ON DUPLICATE KEY UPDATE expires_at=DATE_ADD(NOW(), INTERVAL 7 DAY)`,
+      [token, enrolmentId, pendingPay.month_num]
+    );
+
+    const today   = new Date();
+    const dd      = String(today.getDate()).padStart(2, '0');
+    const mm      = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy    = today.getFullYear();
+    const dueStr  = `${dd}/${mm}/${yyyy}`;
+    const BASE_URL = process.env.GMS_BASE_URL || 'https://gms.whpjewellers.com';
+    const payUrl  = `${BASE_URL}/pay/${token}`;
+
+    await sendSms(
+      enrol.phone,
+      SMS.reminder(Math.round(parseFloat(enrol.instalment_amt)), enrolmentId, dueStr, payUrl),
+      'reminder'
+    );
+
+    await db.query(
+      'INSERT INTO gms_audit_log (enrolment_id, action, done_by, branch, details) VALUES (?,?,?,?,?)',
+      [enrolmentId, 'Manual Reminder Sent', 'staff', enrol.preferred_branch || 'Admin',
+       `Month ${pendingPay.month_num}. SMS sent to ${enrol.phone}`]
+    );
+
+    return res.json({ success: true, message: 'Reminder sent to +91 ' + enrol.phone });
+  } catch(err) {
+    console.error('[GMS] manual-reminder error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
   console.log('[GMS] Payment reminder routes loaded');
 };
