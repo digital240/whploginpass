@@ -1223,7 +1223,13 @@ async function openDetail(enrolId) {
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Payment History <span style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-soft)">(click a pending month to mark paid)</span></div>
       <div class="pay-grid">${cells}</div>
 
-      ${canEdit ? `<div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="openMarkPaid('${enrolId}', ${made+1})">+ Mark Next Payment</button></div>` : ''}
+    ${canEdit ? `
+  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-outline btn-sm" onclick="openMarkPaid('${enrolId}', ${made+1})">+ Mark Next Payment</button>
+    ${(e.pay_method === 'UPI Single Payment' || e.pay_method === 'Pay at Store' || (e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status !== 'active')) && e.status === 'Active'
+      ? `<button class="btn btn-outline btn-sm" onclick="sendReminderSms('${enrolId}')">📩 Send Reminder SMS</button>`
+      : ''}
+  </div>` : ''}
 
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Late Fees</div>
@@ -1879,6 +1885,23 @@ async function resendMandate(enrolId) {
     const data = await res.json();
     if (data.success) showToast('Mandate link sent to customer!', 'ok');
     else showToast(data.message || 'Failed to send.', 'error');
+  } catch(e) {
+    showToast('Connection error.', 'error');
+  }
+  
+}
+
+async function sendReminderSms(enrolId) {
+  if (!confirm('Send payment reminder SMS to customer?')) return;
+  try {
+    const res = await fetch(API + '/api/gms/send-reminder-manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ enrolmentId: enrolId })
+    });
+    const data = await res.json();
+    if (data.success) showToast('Reminder SMS sent!', 'ok');
+    else showToast(data.message || 'Failed.', 'error');
   } catch(e) {
     showToast('Connection error.', 'error');
   }
