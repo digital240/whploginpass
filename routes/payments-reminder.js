@@ -408,14 +408,13 @@ app.post('/api/gms/change-pay-method', async (req, res) => {
     if (!enrolRows.length) return res.status(404).json({ success: false, message: 'Enrolment not found.' });
     const enrol = enrolRows[0];
 
-    // Verify OTP via user-auth endpoint logic
-console.log(`[GMS] OTP check for ${enrol.phone} — cache keys:`, cache.keys());
-const otpData = cache.get(`otp:${enrol.phone}`);
-console.log(`[GMS] OTP data:`, otpData, '— entered:', otp);
-if (!otpData || String(otpData.code) !== String(otp)) {
+  const otpData = cache.get(`gms_otp:${enrol.phone}`);
+if (!otpData || String(otpData.otp) !== String(otp)) {
   return res.status(400).json({ success: false, message: 'Incorrect OTP. Please try again.' });
 }
+cache.del(`gms_otp:${enrol.phone}`);
 cache.del(`otp:${enrol.phone}`);
+
 
     const Razorpay = require('razorpay');
     const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
