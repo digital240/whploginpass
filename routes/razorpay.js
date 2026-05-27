@@ -114,13 +114,15 @@ async function sendAutopayNudge(enrolmentId, phone) {
       }
     }
 
-    if (shortUrl) {
+     if (shortUrl) {
+      // ── Nudge 1 — 5 minutes after payment
       await db.query(
-        `INSERT INTO gms_pending_nudges (enrolment_id, phone, short_url, send_after)
-         VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 2 HOUR))`,
+        `INSERT INTO gms_pending_nudges (enrolment_id, phone, short_url, send_after, expires_at, nudge_count)
+         VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), DATE_ADD(NOW(), INTERVAL 30 DAY), 1)
+         ON DUPLICATE KEY UPDATE short_url=VALUES(short_url), send_after=DATE_ADD(NOW(), INTERVAL 5 MINUTE), expires_at=DATE_ADD(NOW(), INTERVAL 30 DAY), sent=0, nudge_count=1`,
         [enrolmentId, phone, shortUrl]
       );
-      console.log(`[GMS] Autopay nudge scheduled for ${phone} in 2 hours`);
+      console.log(`[GMS] Autopay nudge 1 scheduled for ${phone} in 5 minutes`);
     }
   } catch(e) {
     console.log('[GMS] Autopay nudge schedule (non-critical):', e.message);
