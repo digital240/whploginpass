@@ -1666,9 +1666,10 @@ async function loadDrafts() {
         <td class="td-amt">${fmtAmt(r.instalment_amt)}</td>
         <td style="color:var(--amber);font-weight:600">${fmtAmt(r.total_redeemable)}</td>
         <td class="td-muted">${fmtDate(r.enrolment_date||r.created_at)}</td>
-        <td>
-          <span style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600">⏳ Pending UPI</span>
-        </td>
+       <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+  <span style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600">⏳ Pending UPI</span>
+  <button class="btn btn-outline btn-sm" onclick="resendMandate('${r.enrolment_id}')">📲 Resend Link</button>
+</td>
       </tr>`).join('');
   } catch(e) { console.error('loadDrafts error:', e); }
 }
@@ -1849,6 +1850,22 @@ async function loadAuditLog() {
       </div>`).join('');
   } catch(e) {
     document.getElementById('audit-list').innerHTML = '<p style="color:var(--text-soft);text-align:center;padding:20px">Add /api/gms-audit-log route to see logs.</p>';
+  }
+}
+
+async function resendMandate(enrolId) {
+  if (!confirm('Resend UPI mandate link to customer via SMS?')) return;
+  try {
+    const res  = await fetch(API + '/api/razorpay/resend-mandate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify({ enrolmentId: enrolId })
+    });
+    const data = await res.json();
+    if (data.success) showToast('Mandate link sent to customer!', 'ok');
+    else showToast(data.message || 'Failed to send.', 'error');
+  } catch(e) {
+    showToast('Connection error.', 'error');
   }
 }
 </script>
