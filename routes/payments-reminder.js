@@ -409,12 +409,11 @@ app.post('/api/gms/change-pay-method', async (req, res) => {
     const enrol = enrolRows[0];
 
     // Verify OTP via user-auth endpoint logic
-    const verifyRes = await fetch(`${process.env.BACKEND_URL || 'http://localhost:' + (process.env.PORT || 4000)}/api/gms/verify-otp`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: enrol.phone, otp })
-    });
-    const verifyData = await verifyRes.json();
-    if (!verifyData.success) return res.status(400).json({ success: false, message: 'Incorrect OTP. Please try again.' });
+    const otpData = cache.get(`otp:${enrol.phone}`);
+if (!otpData || String(otpData.code) !== String(otp)) {
+  return res.status(400).json({ success: false, message: 'Incorrect OTP. Please try again.' });
+}
+cache.del(`otp:${enrol.phone}`);
 
     const Razorpay = require('razorpay');
     const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
