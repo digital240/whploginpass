@@ -1964,7 +1964,20 @@ function openChangePayMethod(enrolId) {
   document.getElementById('chpay-phone').value    = enrol.phone;
   document.getElementById('chpay-sub').textContent = enrolId + ' · ' + enrol.name;
   document.getElementById('chpay-info').textContent = `Current: ${enrol.pay_method||'—'} · Monthly: ₹${Number(enrol.instalment_amt).toLocaleString('en-IN')}`;
-  document.getElementById('chpay-method').value    = '';
+  const methodSelect = document.getElementById('chpay-method');
+methodSelect.innerHTML = '<option value="">Select new method</option>';
+
+if (enrol.pay_method === 'UPI Single Payment') {
+  // Single pay can switch to full autopay or store
+  methodSelect.innerHTML += '<option value="UPI Auto-debit">UPI Auto-debit (set up mandate)</option>';
+  methodSelect.innerHTML += '<option value="Pay at Store">Pay at Store</option>';
+} else if (enrol.pay_method === 'UPI Auto-debit') {
+  // Autopay can only switch to store
+  methodSelect.innerHTML += '<option value="Pay at Store">Pay at Store</option>';
+} else if (enrol.pay_method === 'Pay at Store') {
+  // Store can only switch to autopay
+  methodSelect.innerHTML += '<option value="UPI Auto-debit">UPI Auto-debit (set up mandate)</option>';
+}
   document.getElementById('chpay-otp').value       = '';
   document.getElementById('chpay-otp-hint').textContent = '';
   document.getElementById('chpay-otp-section').style.display  = 'none';
