@@ -409,7 +409,9 @@ app.post('/api/gms/change-pay-method', async (req, res) => {
     const enrol = enrolRows[0];
 
     // Verify OTP via user-auth endpoint logic
-    const otpData = cache.get(`otp:${enrol.phone}`);
+console.log(`[GMS] OTP check for ${enrol.phone} — cache keys:`, cache.keys());
+const otpData = cache.get(`otp:${enrol.phone}`);
+console.log(`[GMS] OTP data:`, otpData, '— entered:', otp);
 if (!otpData || String(otpData.code) !== String(otp)) {
   return res.status(400).json({ success: false, message: 'Incorrect OTP. Please try again.' });
 }
