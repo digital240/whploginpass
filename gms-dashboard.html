@@ -1192,7 +1192,22 @@ async function openDetail(enrolId) {
           <div class="info-row"><span class="info-label">Mobile</span><span class="info-val">+91 ${e.phone}</span></div>
           <div class="info-row"><span class="info-label">Email</span><span class="info-val">${e.email||'—'}</span></div>
           <div class="info-row"><span class="info-label">Branch</span><span class="info-val"><span class="badge badge-branch">${e.preferred_branch||'—'}</span></span></div>
-          <div class="info-row"><span class="info-label">Pay Method</span><span class="info-val">${e.pay_method||'—'}</span></div>
+          <div class="info-row">
+  <span class="info-label">Pay Method</span>
+  <span class="info-val">
+    ${e.pay_method||'—'}
+    ${e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'active'
+      ? '<span style="background:var(--green-bg);color:var(--green);border-radius:100px;font-size:10px;padding:2px 8px;margin-left:6px;font-weight:700">✓ AUTOPAY ACTIVE</span>'
+      : e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'created'
+      ? '<span style="background:#fff8e8;color:var(--amber);border-radius:100px;font-size:10px;padding:2px 8px;margin-left:6px;font-weight:700">⏳ MANDATE PENDING</span>'
+      : e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'halted'
+      ? '<span style="background:var(--red-bg);color:var(--red);border-radius:100px;font-size:10px;padding:2px 8px;margin-left:6px;font-weight:700">⚠ HALTED</span>'
+      : e.pay_method === 'UPI Single Payment'
+      ? '<span style="background:var(--blue-bg);color:var(--blue);border-radius:100px;font-size:10px;padding:2px 8px;margin-left:6px;font-weight:700">SINGLE PAY</span>'
+      : ''
+    }
+  </span>
+</div>
         </div>
         <div>
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Scheme Details</div>
