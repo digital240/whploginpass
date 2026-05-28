@@ -1032,12 +1032,28 @@ async function doLogin() {
   }
 }
 
+// REPLACE WITH:
 function doLogout() {
   _token = _role = _branch = _uname = null;
   localStorage.removeItem('gms_staff_token');
   localStorage.removeItem('gms_staff_role');
   localStorage.removeItem('gms_staff_branch');
   localStorage.removeItem('gms_staff_name');
+  localStorage.removeItem('gms_staff_login_time');
+
+  // Reset login form
+  document.getElementById('l-user').value = '';
+  document.getElementById('l-pass').value = '';
+  document.getElementById('l-hint').textContent = '';
+  const btn = document.getElementById('l-btn');
+  btn.disabled = false;
+  btn.textContent = 'Login →';
+
+  // Reset password eye
+  document.getElementById('l-pass').type = 'password';
+  const eye = document.getElementById('pass-eye');
+  if (eye) eye.textContent = '👁';
+
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
 }
