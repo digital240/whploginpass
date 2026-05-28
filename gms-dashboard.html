@@ -478,7 +478,7 @@ tr:hover td{background:#fdf8f5;}
               <thead><tr>
                 <th>ID</th><th>Name</th><th>Mobile</th>
                 <th>Branch</th><th>Monthly</th><th>Paid</th>
-                <th>Status</th><th>Maturity</th><th></th>
+                <th>Pay Method</th><th>Status</th><th>Maturity</th><th></th>
               </tr></thead>
               <tbody id="enrol-tbl-body">
                 <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</td></tr>
@@ -992,6 +992,21 @@ function statusBadge(s) {
   const map = { Active:'active', Matured:'matured', Complete:'complete', Discontinued:'discontinued' };
   return `<span class="badge badge-${map[s]||'active'}">${s||'Active'}</span>`;
 }
+
+function payMethodBadge(method, subStatus) {
+  if (method === 'UPI Auto-debit') {
+    if (subStatus === 'active')
+      return '<span class="badge badge-active">⚡ Autopay</span>';
+    if (subStatus === 'halted')
+      return '<span class="badge badge-discontinued">⚠ Halted</span>';
+    return '<span class="badge badge-matured">⏳ Mandate</span>';
+  }
+  if (method === 'UPI Single Payment' || method === 'UPI One-time')
+    return '<span class="badge badge-complete">💳 Single Pay</span>';
+  if (method === 'Pay at Store')
+    return '<span class="badge badge-branch">🏪 Store</span>';
+  return '<span class="badge">—</span>';
+}
 function openModal(id) { document.getElementById(id).classList.add('open'); document.body.style.overflow = 'hidden'; }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow = ''; }
 function onBdClick(e, id) { if (e.target.id === id) closeModal(id); }
@@ -1176,18 +1191,20 @@ function filterEnrolments() {
 function renderEnrolTable(rows) {
   const tbody = document.getElementById('enrol-tbl-body');
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-soft)">No enrolments found.</td></tr>'; return; }
-  tbody.innerHTML = rows.map(r => `
-    <tr>
-      <td class="td-id">${r.enrolment_id}</td>
-      <td class="td-name">${r.name}</td>
-      <td class="td-muted">+91 ${r.phone}</td>
-      <td><span class="badge badge-branch">${r.preferred_branch||'—'}</span></td>
-      <td class="td-amt">${fmtAmt(r.instalment_amt)}</td>
-      <td class="td-muted">${r.payments_made||0} / ${r.pay_months||'—'}</td>
-      <td>${statusBadge(r.status)}</td>
-      <td class="td-muted">${fmtDate(r.maturity_date)}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="openDetail('${r.enrolment_id}')">View →</button></td>
-    </tr>`).join('');
+  // REPLACE WITH:
+tbody.innerHTML = rows.map(r => `
+  <tr>
+    <td class="td-id">${r.enrolment_id}</td>
+    <td class="td-name">${r.name}</td>
+    <td class="td-muted">+91 ${r.phone}</td>
+    <td><span class="badge badge-branch">${r.preferred_branch||'—'}</span></td>
+    <td class="td-amt">${fmtAmt(r.instalment_amt)}</td>
+    <td class="td-muted">${r.payments_made||0} / ${r.pay_months||'—'}</td>
+    <td>${payMethodBadge(r.pay_method, r.razorpay_sub_status)}</td>
+    <td>${statusBadge(r.status)}</td>
+    <td class="td-muted">${fmtDate(r.maturity_date)}</td>
+    <td><button class="btn btn-outline btn-sm" onclick="openDetail('${r.enrolment_id}')">View →</button></td>
+  </tr>`).join('');
 }
 
 function renderRecentTable(rows) {
