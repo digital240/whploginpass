@@ -36,6 +36,12 @@ module.exports = function(app, cache) {
         enrol.payments = payments;
       }
       const u = req.gmsUser;
+      // REPLACE WITH:
+      const [addrRows] = await db.query(
+        'SELECT * FROM gms_user_addresses WHERE user_id=? AND is_default=1 LIMIT 1',
+        [cid]
+      );
+
       return res.json({
         success: true,
         user: {
@@ -44,15 +50,14 @@ module.exports = function(app, cache) {
           address1: u.address1, address2: u.address2, city: u.city,
           state: u.state, pincode: u.pincode, photo_url: u.photo_url,
           member_since: u.created_at,
-          // Nominee details
           nominee_name: u.nominee_name, nominee_address: u.nominee_address,
           nominee_pan: u.nominee_pan, nominee_aadhaar: u.nominee_aadhaar,
           nominee_mobile: u.nominee_mobile, nominee_relation: u.nominee_relation,
-          // Bank details
           bank_name: u.bank_name, bank_branch: u.bank_branch,
           bank_account: u.bank_account, bank_ifsc: u.bank_ifsc
         },
-        enrolments
+        enrolments,
+        defaultAddress: addrRows[0] || null
       });
     } catch(err) {
       console.error('[GMS /me]', err.message);
