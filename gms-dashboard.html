@@ -346,7 +346,10 @@ tr:hover td{background:#fdf8f5;}
     </div>
     <div class="fg">
       <label>Password</label>
-      <input type="password" id="l-pass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      <div style="position:relative">
+  <input type="password" id="l-pass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" style="width:100%;padding-right:44px">
+  <button onclick="togglePassVis()" type="button" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:var(--text-soft);line-height:1" id="pass-eye">👁</button>
+</div>
     </div>
     <div class="login-hint" id="l-hint"></div>
     <button class="btn-login" id="l-btn" onclick="doLogin()">Login →</button>
@@ -1021,6 +1024,7 @@ async function doLogin() {
     localStorage.setItem('gms_staff_role',  _role);
     localStorage.setItem('gms_staff_branch', _branch || '');
     localStorage.setItem('gms_staff_name',   _uname);
+    localStorage.setItem('gms_staff_login_time', Date.now());
     bootApp();
   } catch(e) {
     hint.textContent = 'Connection error. Try again.';
@@ -1081,13 +1085,23 @@ function bootApp() {
 
 // Auto-login from localStorage
 window.addEventListener('DOMContentLoaded', () => {
-  const tok = localStorage.getItem('gms_staff_token');
-  if (tok) {
+  const tok       = localStorage.getItem('gms_staff_token');
+  const loginTime = parseInt(localStorage.getItem('gms_staff_login_time') || '0');
+  const elapsed   = Date.now() - loginTime;
+  const hours24   = 24 * 60 * 60 * 1000;
+
+  if (tok && elapsed < hours24) {
     _token  = tok;
     _role   = localStorage.getItem('gms_staff_role')   || 'branch';
     _branch = localStorage.getItem('gms_staff_branch') || '';
     _uname  = localStorage.getItem('gms_staff_name')   || '';
     bootApp();
+
+    // Auto logout after remaining time
+    setTimeout(doLogout, hours24 - elapsed);
+  } else if (tok) {
+    // Token expired — clear and show login
+    doLogout();
   }
 });
 
@@ -2052,6 +2066,18 @@ async function confirmChangePayMethod() {
   } catch(e) {
     btn.disabled = false; btn.textContent = 'Confirm Change →';
     showToast('Connection error.', 'error');
+  }
+}
+
+function togglePassVis() {
+  const inp = document.getElementById('l-pass');
+  const eye = document.getElementById('pass-eye');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    eye.textContent = '🙈';
+  } else {
+    inp.type = 'password';
+    eye.textContent = '👁';
   }
 }
 </script>
