@@ -267,10 +267,16 @@ if (address1 && city && pincode) {
         const [existingAddrs] = await db.query(
           'SELECT COUNT(*) as cnt FROM gms_user_addresses WHERE user_id=?', [userId]
         );
+       // REPLACE WITH:
         if (existingAddrs[0].cnt === 0) {
           await db.query(
             'INSERT INTO gms_user_addresses (user_id, label, address1, address2, city, state, pincode, is_default) VALUES (?,?,?,?,?,?,?,1)',
             [userId, 'Home', address1, address2||'', city, state||'', pincode]
+          );
+        } else if (address1 && city && pincode) {
+          await db.query(
+            'UPDATE gms_user_addresses SET address1=?, address2=?, city=?, state=?, pincode=? WHERE user_id=? AND is_default=1',
+            [address1, address2||'', city, state||'', pincode, userId]
           );
         }
       }
