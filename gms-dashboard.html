@@ -346,10 +346,7 @@ tr:hover td{background:#fdf8f5;}
     </div>
     <div class="fg">
       <label>Password</label>
-      <div style="position:relative">
-  <input type="password" id="l-pass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" style="width:100%;padding-right:44px">
-  <button onclick="togglePassVis()" type="button" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:var(--text-soft);line-height:1" id="pass-eye">👁</button>
-</div>
+      <input type="password" id="l-pass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <div class="login-hint" id="l-hint"></div>
     <button class="btn-login" id="l-btn" onclick="doLogin()">Login →</button>
@@ -478,7 +475,7 @@ tr:hover td{background:#fdf8f5;}
               <thead><tr>
                 <th>ID</th><th>Name</th><th>Mobile</th>
                 <th>Branch</th><th>Monthly</th><th>Paid</th>
-                <th>Pay Method</th><th>Status</th><th>Maturity</th><th></th>
+                <th>Status</th><th>Maturity</th><th></th>
               </tr></thead>
               <tbody id="enrol-tbl-body">
                 <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</td></tr>
@@ -489,68 +486,69 @@ tr:hover td{background:#fdf8f5;}
       </div>
 
       <!-- ══ PAGE: REPORTS ══ -->
-<div class="page" id="page-reports">
-  <div class="page-hdr-row">
-    <div class="page-hdr">
-      <div class="page-title">Reports</div>
-      <div class="page-sub">Payment collection &amp; scheme summary</div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <select class="filter-select" id="report-branch-filter" onchange="filterReportBranch()">
-        <option value="">All Branches</option>
-        <option>Borivali</option>
-        <option>Vashi</option>
-        <option>Nalasopara</option>
-        <option>Vile Parle</option>
-      </select>
-      <button class="btn btn-outline btn-sm" onclick="loadReports()">↻ Refresh</button>
-    </div>
-  </div>
+      <div class="page" id="page-reports">
+        <div class="page-hdr">
+          <div class="page-title">Reports</div>
+          <div class="page-sub">Payment collection &amp; scheme summary</div>
+        </div>
 
-  <!-- Overview Stats -->
-  <div class="stats-grid" id="report-stats" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:24px">
-    <div class="stat-card green"><div class="stat-num" id="r-paid">—</div><div class="stat-label">Total Collected</div></div>
-    <div class="stat-card"><div class="stat-num" id="r-total">—</div><div class="stat-label">Total Schemes</div></div>
-    <div class="stat-card green"><div class="stat-num" id="r-active">—</div><div class="stat-label">Active</div></div>
-    <div class="stat-card amber"><div class="stat-num" id="r-matured">—</div><div class="stat-label">Matured</div></div>
-    <div class="stat-card"><div class="stat-num" id="r-latefees">—</div><div class="stat-label">Late Fees</div></div>
-    <div class="stat-card blue"><div class="stat-num" id="r-soon2">—</div><div class="stat-label">Maturing 30d</div></div>
-  </div>
+        <!-- Overview stats -->
+        <div class="stats-grid" id="report-stats">
+          <div class="stat-card green"><div class="stat-num" id="r-paid">—</div><div class="stat-label">Total Collected</div></div>
+          <div class="stat-card"><div class="stat-num" id="r-upi">—</div><div class="stat-label">UPI Autopay</div></div>
+          <div class="stat-card blue"><div class="stat-num" id="r-single">—</div><div class="stat-label">Single Pay</div></div>
+          <div class="stat-card"><div class="stat-num" id="r-store">—</div><div class="stat-label">Pay at Store</div></div>
+          <div class="stat-card amber"><div class="stat-num" id="r-soon2">—</div><div class="stat-label">Maturing in 30 days</div></div>
+        </div>
 
-  <!-- Payment Method Breakdown -->
-  <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-soft);margin-bottom:10px">Payment method breakdown</div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
-    <div class="card" style="display:flex;align-items:center;gap:14px;padding:16px 18px">
-      <div style="width:40px;height:40px;border-radius:var(--radius);background:var(--green-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🔄</div>
-      <div><div style="font-size:11px;color:var(--text-soft);margin-bottom:3px">UPI Autopay</div><div style="font-size:20px;font-weight:600;color:var(--brand-deep)" id="m-auto-count">—</div><div style="font-size:12px;color:var(--green)" id="m-auto-amt">—</div></div>
-    </div>
-    <div class="card" style="display:flex;align-items:center;gap:14px;padding:16px 18px">
-      <div style="width:40px;height:40px;border-radius:var(--radius);background:var(--blue-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💳</div>
-      <div><div style="font-size:11px;color:var(--text-soft);margin-bottom:3px">Single Pay</div><div style="font-size:20px;font-weight:600;color:var(--brand-deep)" id="m-single-count">—</div><div style="font-size:12px;color:var(--blue)" id="m-single-amt">—</div></div>
-    </div>
-    <div class="card" style="display:flex;align-items:center;gap:14px;padding:16px 18px">
-      <div style="width:40px;height:40px;border-radius:var(--radius);background:var(--amber-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🏪</div>
-      <div><div style="font-size:11px;color:var(--text-soft);margin-bottom:3px">Pay at Store</div><div style="font-size:20px;font-weight:600;color:var(--brand-deep)" id="m-store-count">—</div><div style="font-size:12px;color:var(--amber)" id="m-store-amt">—</div></div>
-    </div>
-  </div>
+        <!-- Payment method breakdown -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-head"><span class="card-title">Payment Method Breakdown</span></div>
+          <div class="card-body" style="padding:16px">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px" id="method-breakdown">
+              <div style="background:#e8f5ee;border-radius:10px;padding:16px;display:flex;align-items:center;gap:12px">
+                <div style="width:40px;height:40px;background:#2d7a4f;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🔄</div>
+                <div><div style="font-size:11px;color:#2d7a4f;margin-bottom:2px">UPI Autopay</div><div style="font-size:20px;font-weight:600" id="mb-upi-count">—</div><div style="font-size:12px;color:var(--green)" id="mb-upi-amt">—</div></div>
+              </div>
+              <div style="background:#e8f0fc;border-radius:10px;padding:16px;display:flex;align-items:center;gap:12px">
+                <div style="width:40px;height:40px;background:#1a5fa8;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">💳</div>
+                <div><div style="font-size:11px;color:#1a5fa8;margin-bottom:2px">Single Pay</div><div style="font-size:20px;font-weight:600" id="mb-single-count">—</div><div style="font-size:12px;color:var(--blue)" id="mb-single-amt">—</div></div>
+              </div>
+              <div style="background:#fff8e8;border-radius:10px;padding:16px;display:flex;align-items:center;gap:12px">
+                <div style="width:40px;height:40px;background:#b8892a;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🏪</div>
+                <div><div style="font-size:11px;color:#b8892a;margin-bottom:2px">Pay at Store</div><div style="font-size:20px;font-weight:600" id="mb-store-count">—</div><div style="font-size:12px;color:var(--amber)" id="mb-store-amt">—</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-  <!-- Branch Performance -->
-  <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-soft);margin-bottom:10px">Branch performance — click to view details</div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:4px" id="branch-cards"></div>
-  <div id="branch-detail-panel" style="display:none;margin-bottom:24px"></div>
+        <!-- Branch performance with drilldown -->
+        <div class="card">
+          <div class="card-head"><span class="card-title">Branch Performance</span><span style="font-size:11px;color:var(--text-soft)">Click a branch to view details</span></div>
+          <div class="card-body" style="padding:16px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:0" id="branch-cards"></div>
+          </div>
+        </div>
 
-  <!-- Monthly Trend + Collection Rate -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
-    <div class="card">
-      <div class="card-head"><span class="card-title">Monthly collection trend</span></div>
-      <div class="card-body" id="monthly-trend-body"><p style="color:var(--text-soft);font-size:13px">Loading…</p></div>
-    </div>
-    <div class="card">
-      <div class="card-head"><span class="card-title">Collection rate by branch</span></div>
-      <div class="card-body" id="collection-rate-body"><p style="color:var(--text-soft);font-size:13px">Loading…</p></div>
-    </div>
-  </div>
-</div>
+        <!-- Branch drilldown detail panel -->
+        <div id="branch-detail-panel" style="display:none;margin-top:0">
+          <div class="card" style="border-top:2px solid var(--green);border-radius:0 0 var(--radius-lg) var(--radius-lg)">
+            <div class="card-head" style="background:#e8f5ee">
+              <span class="card-title" style="color:var(--green)" id="branch-detail-title">Branch Detail</span>
+              <span style="font-size:13px;font-weight:600;color:var(--green)" id="branch-detail-total">—</span>
+            </div>
+            <div class="tbl-wrap">
+              <table>
+                <thead><tr>
+                  <th>ID</th><th>Customer</th><th>Monthly</th><th>Paid</th><th>Collected</th><th>Pay Method</th><th>Status</th>
+                </tr></thead>
+                <tbody id="branch-detail-body">
+                  <tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-soft)">Select a branch above</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
 
       <!-- ══ PAGE: MANAGE USERS (Admin only) ══ -->
       <div class="page" id="page-users">
@@ -948,52 +946,6 @@ tr:hover td{background:#fdf8f5;}
     </div>
   </div>
 </div>
-<!-- ══ MODAL: CHANGE PAY METHOD ══ -->
-<div class="modal-backdrop" id="chpay-modal" onclick="onBdClick(event,'chpay-modal')">
-  <div class="modal-box">
-    <div class="modal-hdr">
-      <div>
-        <div class="modal-title">Change Payment Method</div>
-        <div style="font-size:12px;color:var(--text-soft);margin-top:3px" id="chpay-sub"></div>
-      </div>
-      <button class="modal-close" onclick="closeModal('chpay-modal')">✕</button>
-    </div>
-    <div class="modal-body">
-      <div style="background:#f5f0ee;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#5a2a32;font-weight:500" id="chpay-info">—</div>
-
-      <div class="fg">
-        <label>New Payment Method</label>
-        <select id="chpay-method">
-          <option value="">Select new method</option>
-          <option value="UPI Auto-debit">UPI Auto-debit (set up mandate)</option>
-          <option value="Pay at Store">Pay at Store</option>
-        </select>
-      </div>
-
-      <!-- OTP verification -->
-      <div style="background:var(--blue-bg);border:1px solid rgba(26,95,168,0.2);border-radius:8px;padding:14px;margin-top:8px">
-        <div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:6px">🔐 Customer OTP Required</div>
-        <div style="font-size:12px;color:var(--text-soft);margin-bottom:10px">Send OTP to customer's mobile to verify they requested this change.</div>
-        <button class="btn btn-outline btn-sm" id="chpay-send-otp-btn" onclick="sendChangePayOtp()" style="width:100%">📱 Send OTP to Customer</button>
-      </div>
-
-      <div id="chpay-otp-section" style="display:none;margin-top:12px">
-        <div class="fg">
-          <label>Enter OTP (from customer)</label>
-          <input type="number" id="chpay-otp" placeholder="6-digit OTP" style="font-size:20px;letter-spacing:0.2em;text-align:center" oninput="if(this.value.length>6)this.value=this.value.slice(0,6)">
-        </div>
-        <div id="chpay-otp-hint" style="font-size:12px;margin-top:4px"></div>
-      </div>
-
-      <input type="hidden" id="chpay-enrol-id">
-      <input type="hidden" id="chpay-phone">
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('chpay-modal')">Cancel</button>
-      <button class="btn btn-primary" id="chpay-confirm-btn" onclick="confirmChangePayMethod()" style="display:none">Confirm Change →</button>
-    </div>
-  </div>
-</div>
 
 <div class="toast" id="toast"></div>
 
@@ -1029,21 +981,6 @@ function statusBadge(s) {
   const map = { Active:'active', Matured:'matured', Complete:'complete', Discontinued:'discontinued' };
   return `<span class="badge badge-${map[s]||'active'}">${s||'Active'}</span>`;
 }
-
-function payMethodBadge(method, subStatus) {
-  if (method === 'UPI Auto-debit') {
-    if (subStatus === 'active')
-      return '<span class="badge badge-active">⚡ Autopay</span>';
-    if (subStatus === 'halted')
-      return '<span class="badge badge-discontinued">⚠ Halted</span>';
-    return '<span class="badge badge-matured">⏳ Mandate</span>';
-  }
-  if (method === 'UPI Single Payment' || method === 'UPI One-time')
-    return '<span class="badge badge-complete">💳 Single Pay</span>';
-  if (method === 'Pay at Store')
-    return '<span class="badge badge-branch">🏪 Store</span>';
-  return '<span class="badge">—</span>';
-}
 function openModal(id) { document.getElementById(id).classList.add('open'); document.body.style.overflow = 'hidden'; }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow = ''; }
 function onBdClick(e, id) { if (e.target.id === id) closeModal(id); }
@@ -1076,7 +1013,6 @@ async function doLogin() {
     localStorage.setItem('gms_staff_role',  _role);
     localStorage.setItem('gms_staff_branch', _branch || '');
     localStorage.setItem('gms_staff_name',   _uname);
-    localStorage.setItem('gms_staff_login_time', Date.now());
     bootApp();
   } catch(e) {
     hint.textContent = 'Connection error. Try again.';
@@ -1084,28 +1020,12 @@ async function doLogin() {
   }
 }
 
-// REPLACE WITH:
 function doLogout() {
   _token = _role = _branch = _uname = null;
   localStorage.removeItem('gms_staff_token');
   localStorage.removeItem('gms_staff_role');
   localStorage.removeItem('gms_staff_branch');
   localStorage.removeItem('gms_staff_name');
-  localStorage.removeItem('gms_staff_login_time');
-
-  // Reset login form
-  document.getElementById('l-user').value = '';
-  document.getElementById('l-pass').value = '';
-  document.getElementById('l-hint').textContent = '';
-  const btn = document.getElementById('l-btn');
-  btn.disabled = false;
-  btn.textContent = 'Login →';
-
-  // Reset password eye
-  document.getElementById('l-pass').type = 'password';
-  const eye = document.getElementById('pass-eye');
-  if (eye) eye.textContent = '👁';
-
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
 }
@@ -1153,23 +1073,13 @@ function bootApp() {
 
 // Auto-login from localStorage
 window.addEventListener('DOMContentLoaded', () => {
-  const tok       = localStorage.getItem('gms_staff_token');
-  const loginTime = parseInt(localStorage.getItem('gms_staff_login_time') || '0');
-  const elapsed   = Date.now() - loginTime;
-  const hours24   = 24 * 60 * 60 * 1000;
-
-  if (tok && elapsed < hours24) {
+  const tok = localStorage.getItem('gms_staff_token');
+  if (tok) {
     _token  = tok;
     _role   = localStorage.getItem('gms_staff_role')   || 'branch';
     _branch = localStorage.getItem('gms_staff_branch') || '';
     _uname  = localStorage.getItem('gms_staff_name')   || '';
     bootApp();
-
-    // Auto logout after remaining time
-    setTimeout(doLogout, hours24 - elapsed);
-  } else if (tok) {
-    // Token expired — clear and show login
-    doLogout();
   }
 });
 
@@ -1228,20 +1138,18 @@ function filterEnrolments() {
 function renderEnrolTable(rows) {
   const tbody = document.getElementById('enrol-tbl-body');
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-soft)">No enrolments found.</td></tr>'; return; }
-  // REPLACE WITH:
-tbody.innerHTML = rows.map(r => `
-  <tr>
-    <td class="td-id">${r.enrolment_id}</td>
-    <td class="td-name">${r.name}</td>
-    <td class="td-muted">+91 ${r.phone}</td>
-    <td><span class="badge badge-branch">${r.preferred_branch||'—'}</span></td>
-    <td class="td-amt">${fmtAmt(r.instalment_amt)}</td>
-    <td class="td-muted">${r.payments_made||0} / ${r.pay_months||'—'}</td>
-    <td>${payMethodBadge(r.pay_method, r.razorpay_sub_status)}</td>
-    <td>${statusBadge(r.status)}</td>
-    <td class="td-muted">${fmtDate(r.maturity_date)}</td>
-    <td><button class="btn btn-outline btn-sm" onclick="openDetail('${r.enrolment_id}')">View →</button></td>
-  </tr>`).join('');
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td class="td-id">${r.enrolment_id}</td>
+      <td class="td-name">${r.name}</td>
+      <td class="td-muted">+91 ${r.phone}</td>
+      <td><span class="badge badge-branch">${r.preferred_branch||'—'}</span></td>
+      <td class="td-amt">${fmtAmt(r.instalment_amt)}</td>
+      <td class="td-muted">${r.payments_made||0} / ${r.pay_months||'—'}</td>
+      <td>${statusBadge(r.status)}</td>
+      <td class="td-muted">${fmtDate(r.maturity_date)}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="openDetail('${r.enrolment_id}')">View →</button></td>
+    </tr>`).join('');
 }
 
 function renderRecentTable(rows) {
@@ -1322,26 +1230,7 @@ async function openDetail(enrolId) {
           <div class="info-row"><span class="info-label">Mobile</span><span class="info-val">+91 ${e.phone}</span></div>
           <div class="info-row"><span class="info-label">Email</span><span class="info-val">${e.email||'—'}</span></div>
           <div class="info-row"><span class="info-label">Branch</span><span class="info-val"><span class="badge badge-branch">${e.preferred_branch||'—'}</span></span></div>
-          <div class="info-row">
-            <span class="info-label">Pay Method</span>
-            <span class="info-val" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              ${e.pay_method||'—'}
-              ${e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'active'
-                ? '<span style="background:var(--green-bg);color:var(--green);border-radius:100px;font-size:10px;padding:2px 8px;font-weight:700">✓ AUTOPAY ACTIVE</span>'
-                : e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'created'
-                ? '<span style="background:#fff8e8;color:var(--amber);border-radius:100px;font-size:10px;padding:2px 8px;font-weight:700">⏳ MANDATE PENDING</span>'
-                : e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'halted'
-                ? '<span style="background:var(--red-bg);color:var(--red);border-radius:100px;font-size:10px;padding:2px 8px;font-weight:700">⚠ HALTED</span>'
-                : e.pay_method === 'UPI Single Payment'
-                ? '<span style="background:var(--blue-bg);color:var(--blue);border-radius:100px;font-size:10px;padding:2px 8px;font-weight:700">SINGLE PAY</span>'
-                : ''
-              }
-              ${e.status === 'Active' && canEdit
-                ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 10px" onclick="openChangePayMethod('${enrolId}')">Change</button>`
-                : ''
-              }
-            </span>
-          </div>
+          <div class="info-row"><span class="info-label">Pay Method</span><span class="info-val">${e.pay_method||'—'}</span></div>
         </div>
         <div>
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Scheme Details</div>
@@ -1357,13 +1246,7 @@ async function openDetail(enrolId) {
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Payment History <span style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-soft)">(click a pending month to mark paid)</span></div>
       <div class="pay-grid">${cells}</div>
 
-    ${canEdit ? `
-  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-    <button class="btn btn-outline btn-sm" onclick="openMarkPaid('${enrolId}', ${made+1})">+ Mark Next Payment</button>
-    ${(e.pay_method === 'UPI Single Payment' || e.pay_method === 'Pay at Store' || (e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status !== 'active')) && e.status === 'Active'
-      ? `<button class="btn btn-outline btn-sm" onclick="sendReminderSms('${enrolId}')">📩 Send Reminder SMS</button>`
-      : ''}
-  </div>` : ''}
+      ${canEdit ? `<div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="openMarkPaid('${enrolId}', ${made+1})">+ Mark Next Payment</button></div>` : ''}
 
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-soft);margin-bottom:10px">Late Fees</div>
@@ -1597,191 +1480,127 @@ async function confirmCoupon() {
     }
   } catch(e) { btn.disabled = false; btn.textContent = 'Generate & Send Coupon'; showToast('Error.', 'error'); }
 }
-// ── Reports ───────────────────────────────────────────────
+
+// ── Reports ───────────────────────────────────────────
 async function loadReports() {
   try {
     const res  = await fetch(API + '/api/gms-reports', { headers: { 'x-staff-token': _token } });
     const data = await res.json();
     if (!data.success) return;
     const s = data.stats;
-    document.getElementById('r-paid').textContent     = fmtAmt(s.paidAmount);
-    document.getElementById('r-total').textContent    = s.total;
-    document.getElementById('r-active').textContent   = s.active;
-    document.getElementById('r-matured').textContent  = s.matured;
-    document.getElementById('r-latefees').textContent = fmtAmt(s.lateFees || 0);
-    document.getElementById('r-soon2').textContent    = s.maturingSoon;
-    if (_allEnrolments.length) renderReportsDetail();
-    else setTimeout(renderReportsDetail, 1500);
-  } catch(e) { console.error('Reports error:', e); }
+    document.getElementById('r-paid').textContent  = fmtAmt(s.paidAmount);
+    document.getElementById('r-upi').textContent   = s.upi;
+    if (document.getElementById('r-single')) document.getElementById('r-single').textContent = s.single || 0;
+    document.getElementById('r-store').textContent = s.store;
+    document.getElementById('r-soon2').textContent = s.maturingSoon;
+    if (_allEnrolments.length) renderBranchCards();
+    else setTimeout(renderBranchCards, 1500);
+  } catch(e) {}
 }
 
-function filterReportBranch() {
-  renderReportsDetail();
-}
+function renderBranchCards() {
+  const branches = _role === 'admin' ? ['Borivali', 'Vashi', 'Nalasopara', 'Vile Parle'] : [_branch];
+  const container = document.getElementById('branch-cards');
+  if (!container) return;
 
-function renderReportsDetail() {
-  const filterBranch = document.getElementById('report-branch-filter')?.value || '';
-  const branches = ['Borivali', 'Vashi', 'Nalasopara', 'Vile Parle'];
-  let enrols = _allEnrolments.filter(e => e.status !== 'Draft');
-  if (filterBranch) enrols = enrols.filter(e => e.preferred_branch === filterBranch);
+  const real = _allEnrolments.filter(e => e.status !== 'Draft');
 
-  const calcCollected = arr => arr.reduce((s, e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0)), 0);
+  // Method breakdown
+  const upiC    = real.filter(e => e.pay_method === 'UPI Auto-debit').length;
+  const singleC = real.filter(e => e.pay_method === 'UPI Single Payment').length;
+  const storeC  = real.filter(e => e.pay_method === 'Pay at Store').length;
+  const upiA    = real.filter(e => e.pay_method === 'UPI Auto-debit').reduce((s,e) => s+Number(e.total_contribution||0),0);
+  const singleA = real.filter(e => e.pay_method === 'UPI Single Payment').reduce((s,e) => s+Number(e.total_contribution||0),0);
+  const storeA  = real.filter(e => e.pay_method === 'Pay at Store').reduce((s,e) => s+Number(e.total_contribution||0),0);
 
-  // Payment method cards
-  const autoE   = enrols.filter(e => e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'active');
-  const singleE = enrols.filter(e => e.pay_method === 'UPI Single Payment' || e.pay_method === 'UPI One-time');
-  const storeE  = enrols.filter(e => e.pay_method === 'Pay at Store');
-  document.getElementById('m-auto-count').textContent   = autoE.length + ' schemes';
-  document.getElementById('m-auto-amt').textContent     = fmtAmt(calcCollected(autoE)) + ' collected';
-  document.getElementById('m-single-count').textContent = singleE.length + ' schemes';
-  document.getElementById('m-single-amt').textContent   = fmtAmt(calcCollected(singleE)) + ' collected';
-  document.getElementById('m-store-count').textContent  = storeE.length + ' schemes';
-  document.getElementById('m-store-amt').textContent    = fmtAmt(calcCollected(storeE)) + ' collected';
+  const se = id => document.getElementById(id);
+  if (se('mb-upi-count'))    se('mb-upi-count').textContent    = upiC + ' schemes';
+  if (se('mb-upi-amt'))      se('mb-upi-amt').textContent      = fmtAmt(upiA) + ' collected';
+  if (se('mb-single-count')) se('mb-single-count').textContent = singleC + ' schemes';
+  if (se('mb-single-amt'))   se('mb-single-amt').textContent   = fmtAmt(singleA) + ' collected';
+  if (se('mb-store-count'))  se('mb-store-count').textContent  = storeC + ' schemes';
+  if (se('mb-store-amt'))    se('mb-store-amt').textContent    = fmtAmt(storeA) + ' collected';
 
-  // Branch cards
-  const branchList = filterBranch ? [filterBranch] : branches;
-  document.getElementById('branch-cards').innerHTML = branchList.map(br => {
-    const be        = enrols.filter(e => e.preferred_branch === br);
-    const collected = calcCollected(be);
-    const expected  = be.reduce((s, e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.pay_months)||0)), 0);
-    const pct       = expected > 0 ? Math.round((collected / expected) * 100) : 0;
-    const autoC     = be.filter(e => e.pay_method === 'UPI Auto-debit' && e.razorpay_sub_status === 'active').length;
-    const singleC   = be.filter(e => e.pay_method === 'UPI Single Payment' || e.pay_method === 'UPI One-time').length;
-    const storeC    = be.filter(e => e.pay_method === 'Pay at Store').length;
-    const opacity   = be.length === 0 ? 'opacity:0.45;' : '';
-    const brId      = br.replace(/\s+/g, '-');
-    return `<div class="card" style="cursor:pointer;${opacity}" onclick="toggleBranchDetail('${br}',this)" id="bcard-${brId}">
+  container.innerHTML = branches.map(br => {
+    const be        = real.filter(e => e.preferred_branch === br);
+    const collected = be.reduce((s,e) => s+Number(e.total_contribution||0),0);
+    const expected  = be.reduce((s,e) => s+(Number(e.instalment_amt||0)*Number(e.pay_months||0)),0);
+    const pct       = expected > 0 ? Math.round((collected/expected)*100) : 0;
+    const upi       = be.filter(e => e.pay_method === 'UPI Auto-debit').length;
+    const single    = be.filter(e => e.pay_method === 'UPI Single Payment').length;
+    const store     = be.filter(e => e.pay_method === 'Pay at Store').length;
+    const isEmpty   = be.length === 0;
+    return `<div class="stat-card" style="cursor:pointer;${isEmpty?'opacity:0.5':''}" onclick="showBranchDetail('${br}',this)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:14px;font-weight:500">${br}</span>
-        <span class="badge badge-active">${be.length} schemes</span>
+        <div style="font-size:14px;font-weight:600;color:var(--brand-deep)">${br}</div>
+        <span class="badge badge-branch">${be.length} schemes</span>
       </div>
-      <div style="font-size:22px;font-weight:600;color:var(--brand-deep);margin-bottom:2px">${fmtAmt(collected)}</div>
+      <div style="font-family:var(--ffd);font-size:24px;color:var(--green);font-weight:600;margin-bottom:2px">${fmtAmt(collected)}</div>
       <div style="font-size:12px;color:var(--text-soft);margin-bottom:10px">collected · ${fmtAmt(expected)} expected</div>
-      <div style="height:6px;background:var(--line);border-radius:3px;margin-bottom:6px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:var(--green);border-radius:3px"></div>
+      <div style="height:6px;background:#f0e8e8;border-radius:100px;margin-bottom:6px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--green),#43a06b);border-radius:100px"></div>
       </div>
       <div style="font-size:11px;color:var(--text-soft);margin-bottom:10px">${pct}% collected</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <span class="badge badge-active">🔄 Autopay ${autoC}</span>
-        <span class="badge badge-complete">💳 Single ${singleC}</span>
-        <span class="badge badge-admin">🏪 Store ${storeC}</span>
+        ${upi>0?`<span style="background:#e8f5ee;color:#2d7a4f;font-size:10px;padding:3px 8px;border-radius:20px;font-weight:600">🔄 Autopay ${upi}</span>`:''}
+        ${single>0?`<span style="background:#e8f0fc;color:#1a5fa8;font-size:10px;padding:3px 8px;border-radius:20px;font-weight:600">💳 Single ${single}</span>`:''}
+        ${store>0?`<span style="background:#fff8e8;color:#b8892a;font-size:10px;padding:3px 8px;border-radius:20px;font-weight:600">🏪 Store ${store}</span>`:''}
+        ${isEmpty?`<span style="background:var(--line);color:var(--text-soft);font-size:10px;padding:3px 8px;border-radius:20px">No schemes</span>`:''}
       </div>
-    </div>`;
-  }).join('');
-
-  // Collection rate bars
-  document.getElementById('collection-rate-body').innerHTML = [
-    { label: 'Overall', be: enrols },
-    ...branchList.map(br => ({ label: br, be: enrols.filter(e => e.preferred_branch === br) }))
-  ].map(({ label, be }) => {
-    const collected = calcCollected(be);
-    const expected  = be.reduce((s, e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.pay_months)||0)), 0);
-    const pct       = expected > 0 ? Math.round((collected / expected) * 100) : 0;
-    const colors    = { Overall: 'var(--green)', Borivali: 'var(--blue)', Vashi: 'var(--amber)', Nalasopara: 'var(--brand)', 'Vile Parle': 'var(--text-soft)' };
-    return `<div style="margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-        <span style="font-weight:${label==='Overall'?'600':'400'}">${label}</span>
-        <span style="font-weight:500">${pct}% · ${fmtAmt(collected)}</span>
-      </div>
-      <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${colors[label]||'var(--green)'};border-radius:4px"></div>
-      </div>
-    </div>`;
-  }).join('');
-
-  // Monthly trend
-  const now = new Date();
-  const months = Array.from({length:6}, (_,i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (5-i), 1);
-    return { label: d.toLocaleDateString('en-IN',{month:'short',year:'2-digit'}), idx: i };
-  });
-  const maxAmt = calcCollected(enrols);
-  const weights = [0.02, 0.05, 0.08, 0.12, 0.25, 0.48];
-  document.getElementById('monthly-trend-body').innerHTML = months.map(m => {
-    const amt = Math.round(maxAmt * weights[m.idx]);
-    const pct = maxAmt > 0 ? Math.round((amt / maxAmt) * 100) : 0;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px">
-      <span style="width:52px;color:var(--text-soft)">${m.label}</span>
-      <div style="flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:var(--green);border-radius:4px"></div>
-      </div>
-      <span style="width:64px;text-align:right;font-weight:500">${fmtAmt(amt)}</span>
     </div>`;
   }).join('');
 }
 
-let _activeBranchCard = null;
+let _activeBranch = null;
 
-function toggleBranchDetail(branch, card) {
+function showBranchDetail(branch, card) {
   const panel = document.getElementById('branch-detail-panel');
-  const isSame = _activeBranchCard === branch;
-  document.querySelectorAll('#branch-cards .card').forEach(c => { c.style.border = ''; });
-  if (isSame) {
+  const tbody = document.getElementById('branch-detail-body');
+
+  if (_activeBranch === branch) {
     panel.style.display = 'none';
-    _activeBranchCard = null;
+    document.querySelectorAll('#branch-cards .stat-card').forEach(c => c.style.border = '');
+    _activeBranch = null;
     return;
   }
-  _activeBranchCard = branch;
-  card.style.border = '1.5px solid var(--green)';
 
-  let enrols = _allEnrolments.filter(e => e.status !== 'Draft' && e.preferred_branch === branch);
-  const calcCollected = arr => arr.reduce((s, e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0)), 0);
-  const totalCollected = calcCollected(enrols);
+  document.querySelectorAll('#branch-cards .stat-card').forEach(c => c.style.border = '');
+  card.style.border = '2px solid var(--green)';
+  _activeBranch = branch;
+
+  const be = _allEnrolments.filter(e => e.preferred_branch === branch && e.status !== 'Draft');
+  const collected = be.reduce((s,e) => s+Number(e.total_contribution||0),0);
+
+  document.getElementById('branch-detail-title').textContent = `📍 ${branch} — ${be.length} enrolments`;
+  document.getElementById('branch-detail-total').textContent = fmtAmt(collected) + ' collected';
+
+  const methodBadge = m => {
+    if (m === 'UPI Auto-debit')     return '<span style="background:#e8f5ee;color:#2d7a4f;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600">🔄 Autopay</span>';
+    if (m === 'UPI Single Payment') return '<span style="background:#e8f0fc;color:#1a5fa8;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600">💳 Single Pay</span>';
+    return '<span style="background:#fff8e8;color:#b8892a;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600">🏪 Store</span>';
+  };
+
+  if (!be.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-soft)">No enrolments for this branch.</td></tr>';
+  } else {
+    tbody.innerHTML = be.map(e => `<tr>
+      <td class="td-id">${e.enrolment_id}</td>
+      <td class="td-name">${e.name}</td>
+      <td class="td-amt">${fmtAmt(e.instalment_amt)}</td>
+      <td class="td-muted">${e.payments_made||0} / ${e.pay_months||'—'}</td>
+      <td style="color:var(--green);font-weight:600">${fmtAmt(e.total_contribution||0)}</td>
+      <td>${methodBadge(e.pay_method)}</td>
+      <td>${statusBadge(e.status)}</td>
+    </tr>`).join('') +
+    `<tr style="background:#f5f0ee">
+      <td colspan="4" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-soft)">Branch Total</td>
+      <td style="font-weight:700;color:var(--green)">${fmtAmt(collected)}</td>
+      <td colspan="2"></td>
+    </tr>`;
+  }
 
   panel.style.display = 'block';
-  panel.innerHTML = `
-    <div class="card" style="border:1.5px solid var(--green);padding:0;overflow:hidden">
-      <div style="padding:12px 16px;background:var(--green-bg);display:flex;align-items:center;justify-content:space-between">
-        <div style="font-size:13px;font-weight:600;color:var(--green)">📍 ${branch} — ${enrols.length} enrolment${enrols.length!==1?'s':''}</div>
-        <div style="font-size:13px;color:var(--green);font-weight:600">${fmtAmt(totalCollected)} collected</div>
-      </div>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr>
-            <th>ID</th><th>Customer</th><th>Mobile</th><th>Monthly</th>
-            <th>Paid</th><th>Collected</th><th>Pay Method</th><th>Status</th><th></th>
-          </tr></thead>
-          <tbody>
-            ${enrols.length ? enrols.map(e => {
-              const col = parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0);
-              return `<tr>
-                <td class="td-id">${e.enrolment_id}</td>
-                <td class="td-name">${e.name}</td>
-                <td class="td-muted">+91 ${e.phone}</td>
-                <td class="td-amt">${fmtAmt(e.instalment_amt)}</td>
-                <td class="td-muted">${e.payments_made||0} / ${e.pay_months||'—'}</td>
-                <td style="font-weight:600;color:var(--green)">${fmtAmt(col)}</td>
-                <td>${payMethodBadge(e.pay_method, e.razorpay_sub_status)}</td>
-                <td>${statusBadge(e.status)}</td>
-                <td><button class="btn btn-outline btn-sm" onclick="openDetail('${e.enrolment_id}')">View →</button></td>
-              </tr>`;
-            }).join('') : `<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-soft)">No enrolments for ${branch}.</td></tr>`}
-            ${enrols.length ? `<tr style="background:var(--surface)">
-              <td colspan="5" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-soft)">Branch Total</td>
-              <td style="font-weight:700;color:var(--green)">${fmtAmt(totalCollected)}</td>
-              <td colspan="3"></td>
-            </tr>` : ''}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-function renderBranchSummary() {
-  const branches = ['Borivali', 'Vashi', 'Nalasopara', 'Vile Parle'];
-  const tbody = document.getElementById('branch-summary-body');
-  if (!_allEnrolments.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-soft)">No data.</td></tr>'; return; }
-  const rows = _role === 'admin' ? branches : [_branch];
-  tbody.innerHTML = rows.map(br => {
-    const be = _allEnrolments.filter(e => e.preferred_branch === br);
-    return `<tr>
-      <td><span class="badge badge-branch">${br}</span></td>
-      <td>${be.length}</td>
-      <td style="color:var(--green)">${be.filter(e=>e.status==='Active').length}</td>
-      <td style="color:var(--amber)">${be.filter(e=>e.status==='Matured').length}</td>
-      <td style="color:var(--blue)">${be.filter(e=>e.status==='Complete').length}</td>
-    </tr>`;
-  }).join('');
+  setTimeout(() => panel.scrollIntoView({ behavior:'smooth', block:'nearest' }), 100);
 }
 
 // ── Users (Admin only) ────────────────────────────────────
@@ -1972,10 +1791,9 @@ async function loadDrafts() {
         <td class="td-amt">${fmtAmt(r.instalment_amt)}</td>
         <td style="color:var(--amber);font-weight:600">${fmtAmt(r.total_redeemable)}</td>
         <td class="td-muted">${fmtDate(r.enrolment_date||r.created_at)}</td>
-       <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-  <span style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600">⏳ Pending UPI</span>
-  <button class="btn btn-outline btn-sm" onclick="resendMandate('${r.enrolment_id}')">📲 Resend Link</button>
-</td>
+        <td>
+          <span style="background:#fff8e8;color:var(--amber);border:1px solid rgba(184,137,42,0.3);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600">⏳ Pending UPI</span>
+        </td>
       </tr>`).join('');
   } catch(e) { console.error('loadDrafts error:', e); }
 }
@@ -2156,149 +1974,6 @@ async function loadAuditLog() {
       </div>`).join('');
   } catch(e) {
     document.getElementById('audit-list').innerHTML = '<p style="color:var(--text-soft);text-align:center;padding:20px">Add /api/gms-audit-log route to see logs.</p>';
-  }
-}
-
-async function resendMandate(enrolId) {
-  if (!confirm('Resend UPI mandate link to customer via SMS?')) return;
-  try {
-    const res  = await fetch(API + '/api/razorpay/resend-mandate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
-      body: JSON.stringify({ enrolmentId: enrolId })
-    });
-    const data = await res.json();
-    if (data.success) showToast('Mandate link sent to customer!', 'ok');
-    else showToast(data.message || 'Failed to send.', 'error');
-  } catch(e) {
-    showToast('Connection error.', 'error');
-  }
-  
-}
-
-async function sendReminderSms(enrolId) {
-  if (!confirm('Send payment reminder SMS to customer?')) return;
-  try {
-    const res = await fetch(API + '/api/gms/send-reminder-manual', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
-      body: JSON.stringify({ enrolmentId: enrolId })
-    });
-    const data = await res.json();
-    if (data.success) showToast('Reminder SMS sent!', 'ok');
-    else showToast(data.message || 'Failed.', 'error');
-  } catch(e) {
-    showToast('Connection error.', 'error');
-  }
-}
-
-function openChangePayMethod(enrolId) {
-  const enrol = _allEnrolments.find(e => e.enrolment_id === enrolId);
-  if (!enrol) return;
-  document.getElementById('chpay-enrol-id').value = enrolId;
-  document.getElementById('chpay-phone').value    = enrol.phone;
-  document.getElementById('chpay-sub').textContent = enrolId + ' · ' + enrol.name;
-  document.getElementById('chpay-info').textContent = `Current: ${enrol.pay_method||'—'} · Monthly: ₹${Number(enrol.instalment_amt).toLocaleString('en-IN')}`;
-  const methodSelect = document.getElementById('chpay-method');
-methodSelect.innerHTML = '<option value="">Select new method</option>';
-
-if (enrol.pay_method === 'UPI Single Payment') {
-  // Single pay can switch to full autopay or store
-  methodSelect.innerHTML += '<option value="UPI Auto-debit">UPI Auto-debit (set up mandate)</option>';
-  methodSelect.innerHTML += '<option value="Pay at Store">Pay at Store</option>';
-} else if (enrol.pay_method === 'UPI Auto-debit') {
-  // Autopay can only switch to store
-  methodSelect.innerHTML += '<option value="Pay at Store">Pay at Store</option>';
-} else if (enrol.pay_method === 'Pay at Store') {
-  // Store can only switch to autopay
-  methodSelect.innerHTML += '<option value="UPI Auto-debit">UPI Auto-debit (set up mandate)</option>';
-}
-  document.getElementById('chpay-otp').value       = '';
-  document.getElementById('chpay-otp-hint').textContent = '';
-  document.getElementById('chpay-otp-section').style.display  = 'none';
-  document.getElementById('chpay-confirm-btn').style.display  = 'none';
-  document.getElementById('chpay-send-otp-btn').textContent   = '📱 Send OTP to Customer';
-  document.getElementById('chpay-send-otp-btn').disabled      = false;
-  openModal('chpay-modal');
-}
-
-async function sendChangePayOtp() {
-  const enrolId = document.getElementById('chpay-enrol-id').value;
-  const phone   = document.getElementById('chpay-phone').value;
-  const method  = document.getElementById('chpay-method').value;
-  if (!method) { showToast('Select new payment method first.', 'error'); return; }
-
-  const btn = document.getElementById('chpay-send-otp-btn');
-  btn.disabled = true; btn.textContent = 'Sending OTP…';
-
-  try {
-    const res  = await fetch(API + '/api/gms/send-otp', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone })
-    });
-    const data = await res.json();
-    btn.disabled = false; btn.textContent = '📱 Resend OTP';
-    if (data.success) {
-      document.getElementById('chpay-otp-section').style.display = 'block';
-      document.getElementById('chpay-confirm-btn').style.display = 'block';
-      document.getElementById('chpay-otp-hint').textContent = '✓ OTP sent to +91 ' + phone;
-      document.getElementById('chpay-otp-hint').style.color = 'var(--green)';
-      showToast('OTP sent to customer!', 'ok');
-    } else {
-      showToast(data.message || 'Failed to send OTP.', 'error');
-    }
-  } catch(e) {
-    btn.disabled = false; btn.textContent = '📱 Send OTP to Customer';
-    showToast('Connection error.', 'error');
-  }
-}
-
-async function confirmChangePayMethod() {
-  const enrolId = document.getElementById('chpay-enrol-id').value;
-  const phone   = document.getElementById('chpay-phone').value;
-  const method  = document.getElementById('chpay-method').value;
-  const otp     = document.getElementById('chpay-otp').value.trim();
-
-  if (!method) { showToast('Select new payment method.', 'error'); return; }
-  if (!otp || otp.length !== 6) { showToast('Enter 6-digit OTP from customer.', 'error'); return; }
-
-  const btn = document.getElementById('chpay-confirm-btn');
-  btn.disabled = true; btn.textContent = 'Processing…';
-
-  try {
-    const res  = await fetch(API + '/api/gms/change-pay-method', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
-      body: JSON.stringify({ enrolmentId: enrolId, phone, otp, newMethod: method })
-    });
-    const data = await res.json();
-    btn.disabled = false; btn.textContent = 'Confirm Change →';
-
-    if (data.success) {
-      closeModal('chpay-modal');
-      showToast(data.message || 'Payment method changed!', 'ok');
-      loadEnrolments();
-      openDetail(enrolId);
-    } else {
-      document.getElementById('chpay-otp-hint').textContent = data.message || 'Failed.';
-      document.getElementById('chpay-otp-hint').style.color = 'var(--red)';
-      showToast(data.message || 'Failed.', 'error');
-    }
-  } catch(e) {
-    btn.disabled = false; btn.textContent = 'Confirm Change →';
-    showToast('Connection error.', 'error');
-  }
-}
-
-function togglePassVis() {
-  const inp = document.getElementById('l-pass');
-  const eye = document.getElementById('pass-eye');
-  if (inp.type === 'password') {
-    inp.type = 'text';
-    eye.textContent = '🙈';
-  } else {
-    inp.type = 'password';
-    eye.textContent = '👁';
   }
 }
 </script>
