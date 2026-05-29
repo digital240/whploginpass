@@ -540,7 +540,8 @@ tr:hover td{background:#fdf8f5;}
   <div id="branch-detail-panel" style="display:none;margin-bottom:24px"></div>
 
   <!-- Monthly Trend + Collection Rate -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+ 
+<div id="trend-section" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
     <div class="card">
       <div class="card-head"><span class="card-title">Monthly collection trend</span></div>
       <div class="card-body" id="monthly-trend-body"><p style="color:var(--text-soft);font-size:13px">Loading…</p></div>
@@ -1632,28 +1633,29 @@ async function loadReports() {
 function filterReportBranch() {
   renderReportsDetail();
 }
-
 function renderReportsDetail() {
   const filterBranch = document.getElementById('report-branch-filter')?.value || '';
   const branches = ['Borivali', 'Vashi', 'Nalasopara', 'Vile Parle'];
- // Branch managers only see their own branch data
-const activeBranchFilter = filterBranch || (_role !== 'admin' ? _branch : '');
-let enrols = _allEnrolments.filter(e => e.status !== 'Draft');
-if (activeBranchFilter) enrols = enrols.filter(e => e.preferred_branch === activeBranchFilter);
-// ── Recalculate stats from filtered enrolments
-const totalCollected = enrols.reduce((s,e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0)), 0);
-const totalSchemes   = enrols.length;
-const activeSchemes  = enrols.filter(e => e.status === 'Active').length;
-const maturedSchemes = enrols.filter(e => e.status === 'Matured').length;
-const now30          = new Date(); now30.setDate(now30.getDate() + 30);
-const maturingSoon   = enrols.filter(e => e.maturity_date && new Date(e.maturity_date) <= now30 && e.status === 'Active').length;
 
-document.getElementById('r-paid').textContent     = fmtAmt(totalCollected);
-document.getElementById('r-total').textContent    = totalSchemes;
-document.getElementById('r-active').textContent   = activeSchemes;
-document.getElementById('r-matured').textContent  = maturedSchemes;
-document.getElementById('r-latefees').textContent = fmtAmt(0); // late fees need separate API
-document.getElementById('r-soon2').textContent    = maturingSoon;
+  // Branch managers only see their own branch data
+  const activeBranchFilter = filterBranch || (_role !== 'admin' ? _branch : '');
+  let enrols = _allEnrolments.filter(e => e.status !== 'Draft');
+  if (activeBranchFilter) enrols = enrols.filter(e => e.preferred_branch === activeBranchFilter);
+
+  // ── Recalculate stats from filtered enrolments
+  const totalCollected = enrols.reduce((s,e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0)), 0);
+  const totalSchemes   = enrols.length;
+  const activeSchemes  = enrols.filter(e => e.status === 'Active').length;
+  const maturedSchemes = enrols.filter(e => e.status === 'Matured').length;
+  const now30          = new Date(); now30.setDate(now30.getDate() + 30);
+  const maturingSoon   = enrols.filter(e => e.maturity_date && new Date(e.maturity_date) <= now30 && e.status === 'Active').length;
+
+  document.getElementById('r-paid').textContent     = fmtAmt(totalCollected);
+  document.getElementById('r-total').textContent    = totalSchemes;
+  document.getElementById('r-active').textContent   = activeSchemes;
+  document.getElementById('r-matured').textContent  = maturedSchemes;
+  document.getElementById('r-latefees').textContent = fmtAmt(0);
+  document.getElementById('r-soon2').textContent    = maturingSoon;
 
   const calcCollected = arr => arr.reduce((s, e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0)), 0);
 
@@ -1699,45 +1701,61 @@ document.getElementById('r-soon2').textContent    = maturingSoon;
     </div>`;
   }).join('');
 
-  // Collection rate bars
-  document.getElementById('collection-rate-body').innerHTML = [
-    { label: 'Overall', be: enrols },
-    ...branchList.map(br => ({ label: br, be: enrols.filter(e => e.preferred_branch === br) }))
-  ].map(({ label, be }) => {
-    const collected = calcCollected(be);
-    const expected  = be.reduce((s, e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.pay_months)||0)), 0);
-    const pct       = expected > 0 ? Math.round((collected / expected) * 100) : 0;
-    const colors    = { Overall: 'var(--green)', Borivali: 'var(--blue)', Vashi: 'var(--amber)', Nalasopara: 'var(--brand)', 'Vile Parle': 'var(--text-soft)' };
-    return `<div style="margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-        <span style="font-weight:${label==='Overall'?'600':'400'}">${label}</span>
-        <span style="font-weight:500">${pct}% · ${fmtAmt(collected)}</span>
-      </div>
-      <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${colors[label]||'var(--green)'};border-radius:4px"></div>
-      </div>
-    </div>`;
-  }).join('');
+  // Collection rate bars — admin only
+  if (_role === 'admin') {
+    document.getElementById('collection-rate-body').innerHTML = [
+      { label: 'Overall', be: enrols },
+      ...branchList.map(br => ({ label: br, be: enrols.filter(e => e.preferred_branch === br) }))
+    ].map(({ label, be }) => {
+      const collected = calcCollected(be);
+      const expected  = be.reduce((s, e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.pay_months)||0)), 0);
+      const pct       = expected > 0 ? Math.round((collected / expected) * 100) : 0;
+      const colors    = { Overall: 'var(--green)', Borivali: 'var(--blue)', Vashi: 'var(--amber)', Nalasopara: 'var(--brand)', 'Vile Parle': 'var(--text-soft)' };
+      return `<div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span style="font-weight:${label==='Overall'?'600':'400'}">${label}</span>
+          <span style="font-weight:500">${pct}% · ${fmtAmt(collected)}</span>
+        </div>
+        <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${colors[label]||'var(--green)'};border-radius:4px"></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
 
-  // Monthly trend
-  const now = new Date();
-  const months = Array.from({length:6}, (_,i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (5-i), 1);
-    return { label: d.toLocaleDateString('en-IN',{month:'short',year:'2-digit'}), idx: i };
-  });
-  const maxAmt = calcCollected(enrols);
-  const weights = [0.02, 0.05, 0.08, 0.12, 0.25, 0.48];
-  document.getElementById('monthly-trend-body').innerHTML = months.map(m => {
-    const amt = Math.round(maxAmt * weights[m.idx]);
-    const pct = maxAmt > 0 ? Math.round((amt / maxAmt) * 100) : 0;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px">
-      <span style="width:52px;color:var(--text-soft)">${m.label}</span>
-      <div style="flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:var(--green);border-radius:4px"></div>
-      </div>
-      <span style="width:64px;text-align:right;font-weight:500">${fmtAmt(amt)}</span>
-    </div>`;
-  }).join('');
+  // Monthly trend — admin only, real data from API
+  if (_role === 'admin') {
+    document.getElementById('monthly-trend-body').innerHTML = '<p style="color:var(--text-soft);font-size:13px">Loading…</p>';
+    fetch(API + '/api/gms-monthly-trend', { headers: { 'x-staff-token': _token } })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success || !data.months.length) {
+        document.getElementById('monthly-trend-body').innerHTML = '<p style="color:var(--text-soft);font-size:13px">No payment data yet.</p>';
+        return;
+      }
+      const maxAmt = Math.max(...data.months.map(m => parseFloat(m.total||0)));
+      document.getElementById('monthly-trend-body').innerHTML = data.months.map(m => {
+        const amt = Math.round(parseFloat(m.total||0));
+        const pct = maxAmt > 0 ? Math.round((amt / maxAmt) * 100) : 0;
+        const [yr, mo] = m.month.split('-');
+        const label = new Date(yr, mo-1, 1).toLocaleDateString('en-IN', {month:'short', year:'2-digit'});
+        return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px">
+          <span style="width:52px;color:var(--text-soft)">${label}</span>
+          <div style="flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:var(--green);border-radius:4px"></div>
+          </div>
+          <span style="width:64px;text-align:right;font-weight:500">${fmtAmt(amt)}</span>
+        </div>`;
+      }).join('');
+    })
+    .catch(() => {
+      document.getElementById('monthly-trend-body').innerHTML = '<p style="color:var(--text-soft);font-size:13px">Could not load trend data.</p>';
+    });
+  }
+
+  // Show/hide trend section based on role
+  const trendSection = document.getElementById('trend-section');
+  if (trendSection) trendSection.style.display = _role === 'admin' ? 'grid' : 'none';
 }
 
 let _activeBranchCard = null;
