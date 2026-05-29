@@ -1137,8 +1137,7 @@ if (reportFilter && _role !== 'admin') {
   document.getElementById('overview-branch-label').textContent = bl;
   document.getElementById('enrol-branch-label').textContent = bl;
 
-  loadOverview();
-  loadEnrolments();
+ loadEnrolments().then(() => loadOverview());
   if (_role === 'admin') {
     loadUsers();
     loadHalfReg();
@@ -1189,16 +1188,36 @@ async function loadOverview() {
     const data = await res.json();
     if (!data.success) return;
     const s = data.stats;
-    document.getElementById('s-total').textContent    = s.total;
-    document.getElementById('s-active').textContent   = s.active;
-    document.getElementById('s-draft').textContent    = s.draft || 0;
-    document.getElementById('s-matured').textContent  = s.matured;
-    document.getElementById('s-complete').textContent = s.complete;
-    document.getElementById('s-collected').textContent  = fmtAmt(s.paidAmount);
-    document.getElementById('s-latefees').textContent   = fmtAmt(s.lateFees || 0);
-    document.getElementById('s-soon').textContent       = s.maturingSoon;
-    document.getElementById('s-half').textContent     = s.halfReg;
-    document.getElementById('s-disc').textContent     = s.discontinued;
+
+    // For branch managers — filter overview stats to their branch only
+    if (_role !== 'admin' && _branch) {
+      const be = _allEnrolments.filter(e => e.preferred_branch === _branch);
+      const drafts = be.filter(e => e.status === 'Draft');
+      const real   = be.filter(e => e.status !== 'Draft');
+      const now30  = new Date(); now30.setDate(now30.getDate() + 30);
+      document.getElementById('s-total').textContent     = real.length;
+      document.getElementById('s-active').textContent    = real.filter(e => e.status === 'Active').length;
+      document.getElementById('s-draft').textContent     = drafts.length;
+      document.getElementById('s-matured').textContent   = real.filter(e => e.status === 'Matured').length;
+      document.getElementById('s-complete').textContent  = real.filter(e => e.status === 'Complete').length;
+      document.getElementById('s-collected').textContent = fmtAmt(real.reduce((s,e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0)), 0));
+      document.getElementById('s-latefees').textContent  = fmtAmt(0);
+      document.getElementById('s-soon').textContent      = real.filter(e => e.maturity_date && new Date(e.maturity_date) <= now30 && e.status === 'Active').length;
+      document.getElementById('s-half').textContent      = '—';
+      document.getElementById('s-disc').textContent      = real.filter(e => e.status === 'Discontinued').length;
+    } else {
+      // Admin sees all data from API
+      document.getElementById('s-total').textContent    = s.total;
+      document.getElementById('s-active').textContent   = s.active;
+      document.getElementById('s-draft').textContent    = s.draft || 0;
+      document.getElementById('s-matured').textContent  = s.matured;
+      document.getElementById('s-complete').textContent = s.complete;
+      document.getElementById('s-collected').textContent  = fmtAmt(s.paidAmount);
+      document.getElementById('s-latefees').textContent   = fmtAmt(s.lateFees || 0);
+      document.getElementById('s-soon').textContent       = s.maturingSoon;
+      document.getElementById('s-half').textContent     = s.halfReg;
+      document.getElementById('s-disc').textContent     = s.discontinued;
+    }
   } catch(e) { console.error('Overview error:', e); }
 }
 
@@ -1604,13 +1623,7 @@ async function loadReports() {
     const res  = await fetch(API + '/api/gms-reports', { headers: { 'x-staff-token': _token } });
     const data = await res.json();
     if (!data.success) return;
-    const s = data.stats;
-    document.getElementById('r-paid').textContent     = fmtAmt(s.paidAmount);
-    document.getElementById('r-total').textContent    = s.total;
-    document.getElementById('r-active').textContent   = s.active;
-    document.getElementById('r-matured').textContent  = s.matured;
-    document.getElementById('r-latefees').textContent = fmtAmt(s.lateFees || 0);
-    document.getElementById('r-soon2').textContent    = s.maturingSoon;
+
     if (_allEnrolments.length) renderReportsDetail();
     else setTimeout(renderReportsDetail, 1500);
   } catch(e) { console.error('Reports error:', e); }
@@ -1627,6 +1640,20 @@ function renderReportsDetail() {
 const activeBranchFilter = filterBranch || (_role !== 'admin' ? _branch : '');
 let enrols = _allEnrolments.filter(e => e.status !== 'Draft');
 if (activeBranchFilter) enrols = enrols.filter(e => e.preferred_branch === activeBranchFilter);
+// ── Recalculate stats from filtered enrolments
+const totalCollected = enrols.reduce((s,e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0)), 0);
+const totalSchemes   = enrols.length;
+const activeSchemes  = enrols.filter(e => e.status === 'Active').length;
+const maturedSchemes = enrols.filter(e => e.status === 'Matured').length;
+const now30          = new Date(); now30.setDate(now30.getDate() + 30);
+const maturingSoon   = enrols.filter(e => e.maturity_date && new Date(e.maturity_date) <= now30 && e.status === 'Active').length;
+
+document.getElementById('r-paid').textContent     = fmtAmt(totalCollected);
+document.getElementById('r-total').textContent    = totalSchemes;
+document.getElementById('r-active').textContent   = activeSchemes;
+document.getElementById('r-matured').textContent  = maturedSchemes;
+document.getElementById('r-latefees').textContent = fmtAmt(0); // late fees need separate API
+document.getElementById('r-soon2').textContent    = maturingSoon;
 
   const calcCollected = arr => arr.reduce((s, e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0)), 0);
 
