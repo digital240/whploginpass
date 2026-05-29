@@ -65,6 +65,24 @@ module.exports = function(app) {
       return res.status(500).json({ success: false, message: err.message });
     }
   });
-
+// ── GET /api/gms-monthly-trend ────────────────────────
+app.get('/api/gms-monthly-trend', staffAuth, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT 
+        DATE_FORMAT(p.paid_at, '%Y-%m') as month,
+        SUM(p.amount) as total,
+        COUNT(*) as count
+      FROM gms_payments p
+      WHERE p.status = 'Paid' AND p.paid_at IS NOT NULL
+      GROUP BY DATE_FORMAT(p.paid_at, '%Y-%m')
+      ORDER BY month DESC
+      LIMIT 6
+    `);
+    return res.json({ success: true, months: rows.reverse() });
+  } catch(err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
   console.log('[GMS] Report routes loaded');
 };
