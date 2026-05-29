@@ -1128,9 +1128,10 @@ function bootApp() {
       el.style.display = 'none';
     }
   });
-  if (_role === 'admin') {
-    document.getElementById('filter-branch').style.display = '';
-  }
+  const reportFilter = document.getElementById('report-branch-filter');
+if (reportFilter && _role !== 'admin') {
+  reportFilter.style.display = 'none';
+}
   // Branch labels
   const bl = _role === 'admin' ? 'All branches' : (_branch + ' branch');
   document.getElementById('overview-branch-label').textContent = bl;
@@ -1622,8 +1623,10 @@ function filterReportBranch() {
 function renderReportsDetail() {
   const filterBranch = document.getElementById('report-branch-filter')?.value || '';
   const branches = ['Borivali', 'Vashi', 'Nalasopara', 'Vile Parle'];
-  let enrols = _allEnrolments.filter(e => e.status !== 'Draft');
-  if (filterBranch) enrols = enrols.filter(e => e.preferred_branch === filterBranch);
+ // Branch managers only see their own branch data
+const activeBranchFilter = filterBranch || (_role !== 'admin' ? _branch : '');
+let enrols = _allEnrolments.filter(e => e.status !== 'Draft');
+if (activeBranchFilter) enrols = enrols.filter(e => e.preferred_branch === activeBranchFilter);
 
   const calcCollected = arr => arr.reduce((s, e) => s + (parseFloat(e.instalment_amt||0) * (parseInt(e.payments_made)||0)), 0);
 
@@ -1639,7 +1642,7 @@ function renderReportsDetail() {
   document.getElementById('m-store-amt').textContent    = fmtAmt(calcCollected(storeE)) + ' collected';
 
   // Branch cards
-  const branchList = filterBranch ? [filterBranch] : branches;
+  const branchList = activeBranchFilter ? [activeBranchFilter] : branches;
   document.getElementById('branch-cards').innerHTML = branchList.map(br => {
     const be        = enrols.filter(e => e.preferred_branch === br);
     const collected = calcCollected(be);
