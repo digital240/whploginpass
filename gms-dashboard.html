@@ -46,9 +46,6 @@ body{font-family:var(--ff);background:var(--bg);color:var(--text);min-height:100
   color:var(--text);background:#fdf8f5;outline:none;
   transition:border-color .2s;margin-bottom:14px;
 }
-  div#branch-cards .card {
-    padding: 10px;
-}
 .login-box input:focus{border-color:var(--brand);background:#fff;}
 .login-hint{font-size:11px;color:var(--red);margin-top:-10px;margin-bottom:12px;min-height:16px;}
 .btn-login{
@@ -147,7 +144,9 @@ body{font-family:var(--ff);background:var(--bg);color:var(--text);min-height:100
 }
 .card-title{font-family:var(--ffd);font-size:16px;color:var(--brand-deep);font-weight:500;}
 .card-body{padding:20px;}
-
+div#branch-cards .card {
+    padding: 10px;
+}
 /* Stat cards */
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px;}
 .stat-card{
@@ -539,7 +538,7 @@ tr:hover td{background:#fdf8f5;}
 
   <!-- Branch Performance -->
   <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-soft);margin-bottom:10px">Branch performance — click to view details</div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:4px" id="branch-cards"></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:10px" id="branch-cards"></div>
   <div id="branch-detail-panel" style="display:none;margin-bottom:24px"></div>
 
   <!-- Monthly Trend + Collection Rate -->
