@@ -7,9 +7,9 @@ const axios   = require('axios');
 const db      = require('../db');
 const { sendSms, SMS } = require('../helpers/sms');
 
-const SHOPIFY_DOMAIN        = process.env.SHOPIFY_SHOP_DOMAIN;      // jewellery-123456924.myshopify.com
-const SHOPIFY_CLIENT_ID     = process.env.SHOPIFY_MOBILE_CLIENT_ID;  // 68f1ce87b17ca722deabb8011b4b56cf
-const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_MOBILE_CLIENT_SECRET; // shpss_xxx
+const SHOPIFY_DOMAIN        = process.env.SHOPIFY_SHOP_DOMAIN;
+const SHOPIFY_CLIENT_ID     = process.env.SHOPIFY_MOBILE_CLIENT_ID;
+const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_MOBILE_CLIENT_SECRET;
 const OTP_EXPIRY_MIN        = 2;
 const MAX_ATTEMPTS          = 5;
 const LOCK_MINUTES          = 15;
@@ -17,27 +17,29 @@ const SESSION_DAYS          = 30;
 const APP_TAG               = 'whp-app';
 
 // ── Shopify token cache ──────────────────────────────────
-let _shopifyToken      = null;
-let _shopifyTokenExpiry = 0; // epoch ms
+let _shopifyToken       = null;
+let _shopifyTokenExpiry = 0;
 
 async function getShopifyToken() {
-  // Refresh if missing or expiring within 5 minutes
   if (_shopifyToken && Date.now() < _shopifyTokenExpiry - 5 * 60 * 1000) {
     return _shopifyToken;
   }
 
+  // MUST use URLSearchParams + x-www-form-urlencoded (Shopify Dev Dashboard 2026)
+  const params = new URLSearchParams({
+    grant_type:    'client_credentials',
+    client_id:     SHOPIFY_CLIENT_ID,
+    client_secret: SHOPIFY_CLIENT_SECRET,
+  });
+
   const res = await axios.post(
     `https://${SHOPIFY_DOMAIN}/admin/oauth/access_token`,
-    {
-      client_id:     SHOPIFY_CLIENT_ID,
-      client_secret: SHOPIFY_CLIENT_SECRET,
-      grant_type:    'client_credentials',
-    },
-    { headers: { 'Content-Type': 'application/json' } }
+    params.toString(),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
   );
 
   _shopifyToken       = res.data.access_token;
-  _shopifyTokenExpiry = Date.now() + 24 * 60 * 60 * 1000; // 24h
+  _shopifyTokenExpiry = Date.now() + (res.data.expires_in || 86399) * 1000;
   console.log('[APP AUTH] Shopify token refreshed');
   return _shopifyToken;
 }
@@ -78,12 +80,10 @@ async function findShopifyCustomer(mobile) {
 async function createShopifyCustomer(mobile) {
   const data = await shopifyPost('customers.json', {
     customer: {
-      phone:               `+91${mobile}`,
-      first_name:          'WHP',
-      last_name:           'Customer',
-      verified_email:      false,
-      send_email_welcome:  false,
-      tags:                APP_TAG,
+      phone:      `+91${mobile}`,
+      first_name: 'WHP',
+      last_name:  'Customer',
+      tags:       APP_TAG,
     }
   });
   return data.customer;
@@ -93,7 +93,7 @@ async function addShopifyTag(shopifyId, newTag) {
   const data     = await shopifyGet(`customers/${shopifyId}.json`);
   const existing = data.customer?.tags || '';
   const tagList  = existing.split(',').map(t => t.trim()).filter(Boolean);
-  if (tagList.includes(newTag)) return; // already has tag
+  if (tagList.includes(newTag)) return;
   tagList.push(newTag);
   await shopifyPut(`customers/${shopifyId}.json`, {
     customer: { id: shopifyId, tags: tagList.join(', ') }
@@ -155,7 +155,6 @@ module.exports = (app, cache) => {
         return res.status(400).json({ success: false, message: 'Invalid mobile number.' });
       }
 
-      // Check lock
       const [lockRows] = await db.query(
         `SELECT locked_until FROM app_otps WHERE phone = ? LIMIT 1`, [mobile]
       );
@@ -202,7 +201,6 @@ module.exports = (app, cache) => {
       );
       const record = rows[0];
 
-      // Locked?
       if (record?.locked_until && new Date(record.locked_until) > new Date()) {
         return res.status(429).json({ success: false, message: 'Too many attempts. Try again in 15 minutes.' });
       }
@@ -219,10 +217,7 @@ module.exports = (app, cache) => {
               [newAttempts, mobile]
             );
           } else {
-            await db.query(
-              `UPDATE app_otps SET attempts = ? WHERE phone = ?`,
-              [newAttempts, mobile]
-            );
+            await db.query(`UPDATE app_otps SET attempts = ? WHERE phone = ?`, [newAttempts, mobile]);
           }
         }
         return res.status(401).json({
@@ -235,22 +230,18 @@ module.exports = (app, cache) => {
       await db.query(`DELETE FROM app_otps WHERE phone = ?`, [mobile]);
 
       // ── Customer lookup / creation ────────────────────
-
       const [appRows] = await db.query(
         `SELECT * FROM app_customers WHERE mobile = ? LIMIT 1`, [mobile]
       );
       let appCustomer = appRows[0];
 
       if (!appCustomer) {
-        // Not in app_customers — check Shopify
         let shopifyCustomer = await findShopifyCustomer(mobile);
 
         if (!shopifyCustomer) {
-          // Brand new — create in Shopify first
           shopifyCustomer = await createShopifyCustomer(mobile);
           console.log(`[APP AUTH] Created Shopify customer ${shopifyCustomer.id} for ${mobile}`);
         } else {
-          // Existing Shopify customer — add whp-app tag
           await addShopifyTag(shopifyCustomer.id, APP_TAG);
           console.log(`[APP AUTH] Found Shopify customer ${shopifyCustomer.id} for ${mobile}`);
         }
@@ -270,7 +261,6 @@ module.exports = (app, cache) => {
         appCustomer = newRows[0];
 
       } else {
-        // Existing app customer — ensure tag is present
         if (appCustomer.shopify_id) {
           await addShopifyTag(appCustomer.shopify_id, APP_TAG).catch(() => {});
         }
@@ -291,7 +281,8 @@ module.exports = (app, cache) => {
       });
 
     } catch (err) {
-      console.error('[APP AUTH] verify-otp error:', err.message);
+      const detail = err.response?.data ? JSON.stringify(err.response.data) : '';
+      console.error('[APP AUTH] verify-otp error:', err.message, detail);
       res.status(500).json({ success: false, message: 'Verification failed.' });
     }
   });
@@ -322,7 +313,6 @@ module.exports = (app, cache) => {
         `UPDATE app_customers SET name = ?, email = ? WHERE id = ?`,
         [name || '', email || '', req.appUser.customer_id]
       );
-
       if (req.appUser.shopify_id) {
         const [first_name, ...rest] = (name || '').split(' ');
         const last_name = rest.join(' ');
@@ -330,7 +320,6 @@ module.exports = (app, cache) => {
           customer: { id: req.appUser.shopify_id, first_name, last_name, email }
         }).catch(e => console.warn('[APP AUTH] Shopify sync failed:', e.message));
       }
-
       res.json({ success: true, message: 'Profile updated.' });
     } catch (err) {
       console.error('[APP AUTH] profile error:', err.message);
