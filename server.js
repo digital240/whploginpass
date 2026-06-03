@@ -1,185 +1,333 @@
-// server.js — WHP GMS Backend Entry Point
-require('dotenv').config();
-const express   = require('express');
-const helmet    = require('helmet');
-const rateLimit = require('express-rate-limit');
-const NodeCache = require('node-cache');
-const path      = require('path');
+// routes/app-auth.js — WHP Mobile App Authentication
+// Token stored in app_sessions (revokable)
+// Shopify = single source of truth for customer data
+// Tags: gms-member (GMS portal login), whp-app (mobile app login)
 
-const app   = express();
-const cache = new NodeCache({ stdTTL: 600 });
+const crypto  = require('crypto');
+const axios   = require('axios');
+const db      = require('../db');
+const { sendSms, SMS } = require('../helpers/sms');
 
-// ── DB connection check ──────────────────────────────────
-const db = require('./db');
-db.query('SELECT 1')
-  .then(() => console.log('✅ DB Connected'))
-  .catch(err => console.log('❌ DB Error:', err.message));
+const SHOPIFY_DOMAIN  = process.env.SHOPIFY_SHOP_DOMAIN;
+const SHOPIFY_TOKEN   = process.env.SHOPIFY_ADMIN_TOKEN;
+const OTP_EXPIRY_MIN  = 2;
+const MAX_ATTEMPTS    = 5;
+const LOCK_MINUTES    = 15;
+const SESSION_DAYS    = 30;
+const APP_TAG         = 'whp-app';
 
-// ── CORS — must be first ─────────────────────────────────
-app.use(function(req, res, next) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-shop-domain, x-user-token, x-staff-token, x-app-token');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  next();
-});
+// ── Shopify Admin API helpers ────────────────────────────
 
-// ── Middleware ───────────────────────────────────────────
-app.use(helmet({ contentSecurityPolicy: false }));
-
-// !! Webhook raw body — MUST be before express.json()
-// Reads raw body first, then parses JSON manually so express.json() is skipped
-app.use('/api/gms-payment-webhook', (req, res, next) => {
-  let rawBody = '';
-  req.on('data', chunk => { rawBody += chunk; });
-  req.on('end', () => {
-    req.rawBody = rawBody;
-    try { req.body = JSON.parse(rawBody); } catch(e) { req.body = {}; }
-    next();
+async function shopifyGet(path) {
+  const res = await axios.get(`https://${SHOPIFY_DOMAIN}/admin/api/2024-04/${path}`, {
+    headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN }
   });
-});
+  return res.data;
+}
 
-app.use((req, res, next) => {
-  if (req.path === '/api/gms-payment-webhook') return next();
-  express.json({ limit: '10mb' })(req, res, next);
-});
+async function shopifyPut(path, body) {
+  const res = await axios.put(`https://${SHOPIFY_DOMAIN}/admin/api/2024-04/${path}`, body, {
+    headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN, 'Content-Type': 'application/json' }
+  });
+  return res.data;
+}
 
-// ── Rate limiter (OTP endpoints) ─────────────────────────
-const otpLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, max: 5,
-  keyGenerator: req => req.body?.phone || req.ip,
-  message: { success: false, message: 'Too many OTP requests. Try again in 10 minutes.' }
-});
-app.use('/api/send-otp',     otpLimiter);
-app.use('/api/gms/send-otp', otpLimiter);
+async function shopifyPost(path, body) {
+  const res = await axios.post(`https://${SHOPIFY_DOMAIN}/admin/api/2024-04/${path}`, body, {
+    headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN, 'Content-Type': 'application/json' }
+  });
+  return res.data;
+}
 
-// ── Admin dashboard ───────────────────────────────────────
-app.get('/whp_admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'gms-dashboard.html'));
-});
+// Find Shopify customer by phone
+async function findShopifyCustomer(mobile) {
+  const data = await shopifyGet(`customers/search.json?query=phone:+91${mobile}&limit=1`);
+  return data.customers?.[0] || null;
+}
 
-// ── Health check ─────────────────────────────────────────
-app.get('/health', (req, res) => res.json({ status: 'ok', app: 'WHP GMS', time: new Date().toISOString() }));
-
-// ── GMS Routes ───────────────────────────────────────────
-require('./routes/admin')(app, cache);
-require('./routes/enrolments')(app, cache);
-require('./routes/payments')(app);
-require('./routes/coupons')(app);
-require('./routes/reports')(app);
-require('./routes/razorpay')(app, cache);
-require('./routes/user-auth')(app, cache);
-require('./routes/user-profile')(app, cache);
-require('./routes/app-auth')(app, cache);
-
-// ── Payment reminders + pay-now routes ──────────────────
-require('./routes/payments-reminder')(app, cache);
-
-// ── Legacy WLP routes (keep working) ────────────────────
-require('./wlp-routes')(app, cache);
-
-// ── Start ────────────────────────────────────────────────
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`✅ WHP GMS running on port ${PORT}`));
-
-// ── Daily reminder cron (runs at 9am IST = 3:30am UTC) ──
-const cron = require('node-cron');
-const http = require('http');
-
-function triggerReminders() {
-  console.log('[GMS Cron] Running daily reminders...');
-  const options = {
-    hostname: 'localhost',
-    port: PORT,
-    path: '/api/gms/send-reminders',
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-cron-secret': process.env.GMS_CRON_SECRET || 'whpcron2026'
+// Create Shopify customer
+async function createShopifyCustomer(mobile) {
+  const data = await shopifyPost('customers.json', {
+    customer: {
+      phone: `+91${mobile}`,
+      first_name: 'WHP',
+      last_name:  'Customer',
+      verified_email: false,
+      send_email_welcome: false,
+      tags: APP_TAG,
     }
-  };
-  const req = http.request(options, res => {
-    let body = '';
-    res.on('data', d => body += d);
-    res.on('end', () => {
-      try { console.log('[GMS Cron] Result:', JSON.parse(body)); }
-      catch(e) { console.log('[GMS Cron] Response:', body); }
+  });
+  return data.customer;
+}
+
+// Add tag to Shopify customer without removing existing tags
+async function addShopifyTag(shopifyId, newTag) {
+  const data = await shopifyGet(`customers/${shopifyId}.json`);
+  const existing = data.customer?.tags || '';
+  const tagList  = existing.split(',').map(t => t.trim()).filter(Boolean);
+  if (tagList.includes(newTag)) return; // already tagged
+  tagList.push(newTag);
+  await shopifyPut(`customers/${shopifyId}.json`, {
+    customer: { id: shopifyId, tags: tagList.join(', ') }
+  });
+  console.log(`[APP AUTH] Added tag "${newTag}" to Shopify customer ${shopifyId}`);
+}
+
+// ── Session token helpers ────────────────────────────────
+
+function generateToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+async function createSession(customerId, mobile) {
+  const token     = generateToken();
+  const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  await db.query(
+    `INSERT INTO app_sessions (customer_id, mobile, token, expires_at, created_at)
+     VALUES (?, ?, ?, ?, NOW())`,
+    [customerId, mobile, token, expiresAt]
+  );
+  return token;
+}
+
+async function getSession(token) {
+  const [rows] = await db.query(
+    `SELECT s.*, c.name, c.email, c.photo, c.shopify_id
+     FROM app_sessions s
+     JOIN app_customers c ON c.id = s.customer_id
+     WHERE s.token = ? AND s.expires_at > NOW()
+     LIMIT 1`,
+    [token]
+  );
+  return rows[0] || null;
+}
+
+// ── Auth middleware ──────────────────────────────────────
+
+async function appAuth(req, res, next) {
+  const header = req.headers['x-app-token'] || req.headers['authorization'];
+  const token  = header?.startsWith('Bearer ') ? header.slice(7) : header;
+  if (!token) return res.status(401).json({ success: false, message: 'No token provided.' });
+
+  const session = await getSession(token).catch(() => null);
+  if (!session) return res.status(401).json({ success: false, message: 'Invalid or expired session.' });
+
+  req.appUser = session;
+  next();
+}
+
+// ════════════════════════════════════════════════════════
+module.exports = (app, cache) => {
+
+  // ── POST /api/app/send-otp ───────────────────────────
+  app.post('/api/app/send-otp', async (req, res) => {
+    try {
+      const mobile = (req.body.phone || '').replace(/\D/g, '').slice(-10);
+      if (!/^[6-9]\d{9}$/.test(mobile)) {
+        return res.status(400).json({ success: false, message: 'Invalid mobile number.' });
+      }
+
+      // Check lock
+      const [lockRows] = await db.query(
+        `SELECT attempts, locked_until FROM app_otps WHERE phone = ? LIMIT 1`,
+        [mobile]
+      );
+      if (lockRows[0]?.locked_until && new Date(lockRows[0].locked_until) > new Date()) {
+        return res.status(429).json({ success: false, message: 'Too many attempts. Try again in 15 minutes.' });
+      }
+
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+      await db.query(
+        `INSERT INTO app_otps (phone, otp, expires_at, attempts, locked_until)
+         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), 0, NULL)
+         ON DUPLICATE KEY UPDATE
+           otp          = VALUES(otp),
+           expires_at   = VALUES(expires_at),
+           attempts     = 0,
+           locked_until = NULL`,
+        [mobile, otp, OTP_EXPIRY_MIN]
+      );
+
+      await sendSms(mobile, SMS.otp(otp), 'otp');
+      console.log(`[APP AUTH] OTP sent to ${mobile}`);
+      res.json({ success: true, message: 'OTP sent.' });
+
+    } catch (err) {
+      console.error('[APP AUTH] send-otp error:', err.message);
+      res.status(500).json({ success: false, message: 'Failed to send OTP.' });
+    }
+  });
+
+
+  // ── POST /api/app/verify-otp ─────────────────────────
+  app.post('/api/app/verify-otp', async (req, res) => {
+    try {
+      const mobile = (req.body.phone || '').replace(/\D/g, '').slice(-10);
+      const otp    = (req.body.otp   || '').trim();
+
+      if (!mobile || !/^\d{6}$/.test(otp)) {
+        return res.status(400).json({ success: false, message: 'Phone and 6-digit OTP required.' });
+      }
+
+      // Fetch OTP record
+      const [rows] = await db.query(
+        `SELECT * FROM app_otps WHERE phone = ? LIMIT 1`, [mobile]
+      );
+      const record = rows[0];
+
+      // Locked?
+      if (record?.locked_until && new Date(record.locked_until) > new Date()) {
+        return res.status(429).json({ success: false, message: 'Too many attempts. Try again in 15 minutes.' });
+      }
+
+      const expired = !record || new Date(record.expires_at) < new Date();
+      const wrong   = !record || record.otp !== otp;
+
+      if (expired || wrong) {
+        if (record) {
+          const newAttempts = (record.attempts || 0) + 1;
+          if (newAttempts >= MAX_ATTEMPTS) {
+            await db.query(
+              `UPDATE app_otps SET attempts = ?, locked_until = DATE_ADD(NOW(), INTERVAL ${LOCK_MINUTES} MINUTE) WHERE phone = ?`,
+              [newAttempts, mobile]
+            );
+          } else {
+            await db.query(
+              `UPDATE app_otps SET attempts = ? WHERE phone = ?`,
+              [newAttempts, mobile]
+            );
+          }
+        }
+        return res.status(401).json({
+          success: false,
+          message: expired ? 'OTP expired. Request a new one.' : 'Incorrect OTP.'
+        });
+      }
+
+      // ✅ OTP valid — clear it
+      await db.query(`DELETE FROM app_otps WHERE phone = ?`, [mobile]);
+
+      // ── Customer lookup / creation ────────────────────
+
+      // 1. Check app_customers
+      const [appRows] = await db.query(
+        `SELECT * FROM app_customers WHERE mobile = ? LIMIT 1`, [mobile]
+      );
+      let appCustomer = appRows[0];
+
+      if (!appCustomer) {
+        // 2. Check Shopify
+        let shopifyCustomer = await findShopifyCustomer(mobile);
+
+        if (!shopifyCustomer) {
+          // 3. New to WHP entirely — create in Shopify first
+          shopifyCustomer = await createShopifyCustomer(mobile);
+          console.log(`[APP AUTH] Created Shopify customer ${shopifyCustomer.id} for ${mobile}`);
+        } else {
+          // 4. Exists in Shopify — add whp-app tag
+          await addShopifyTag(shopifyCustomer.id, APP_TAG);
+          console.log(`[APP AUTH] Found Shopify customer ${shopifyCustomer.id} for ${mobile}`);
+        }
+
+        // 5. Create app_customers record
+        const fullName = [shopifyCustomer.first_name, shopifyCustomer.last_name].filter(Boolean).join(' ') || 'WHP Customer';
+        await db.query(
+          `INSERT INTO app_customers (mobile, name, email, shopify_id, created_at)
+           VALUES (?, ?, ?, ?, NOW())`,
+          [mobile, fullName, shopifyCustomer.email || '', shopifyCustomer.id]
+        );
+
+        const [newRows] = await db.query(
+          `SELECT * FROM app_customers WHERE mobile = ? LIMIT 1`, [mobile]
+        );
+        appCustomer = newRows[0];
+      } else {
+        // Existing app customer — ensure whp-app tag is on Shopify
+        if (appCustomer.shopify_id) {
+          await addShopifyTag(appCustomer.shopify_id, APP_TAG).catch(() => {});
+        }
+      }
+
+      // ── Create session ────────────────────────────────
+      const token = await createSession(appCustomer.id, mobile);
+
+      res.json({
+        success: true,
+        token,
+        customer: {
+          id:         appCustomer.id,
+          mobile:     appCustomer.mobile,
+          name:       appCustomer.name,
+          email:      appCustomer.email,
+          shopify_id: appCustomer.shopify_id,
+        }
+      });
+
+    } catch (err) {
+      console.error('[APP AUTH] verify-otp error:', err.message);
+      res.status(500).json({ success: false, message: 'Verification failed.' });
+    }
+  });
+
+
+  // ── GET /api/app/me ──────────────────────────────────
+  app.get('/api/app/me', appAuth, async (req, res) => {
+    const u = req.appUser;
+    res.json({
+      success: true,
+      customer: {
+        id:         u.customer_id,
+        mobile:     u.mobile,
+        name:       u.name,
+        email:      u.email,
+        photo:      u.photo,
+        shopify_id: u.shopify_id,
+      }
     });
   });
-  req.on('error', e => console.error('[GMS Cron] Error:', e.message));
-  req.write(JSON.stringify({}));
-  req.end();
-}
-
-cron.schedule('30 3 * * *', triggerReminders, { timezone: 'Asia/Kolkata' });
 
 
-async function sendPendingNudges() {
-  try {
-    const db = require('./db');
-    const { sendSms, SMS } = require('./helpers/sms');
- 
-    // Only process nudges that are due and not expired
-    const [nudges] = await db.query(
-      `SELECT * FROM gms_pending_nudges 
-       WHERE sent=0 AND send_after <= NOW()
-       AND (expires_at IS NULL OR expires_at > NOW())
-       LIMIT 50`
-    );
- 
-    for (const nudge of nudges) {
-      // Check if autopay already active — stop all nudges
-      const [enrolRows] = await db.query(
-        'SELECT razorpay_sub_status FROM gms_enrolments WHERE enrolment_id=?',
-        [nudge.enrolment_id]
+  // ── PUT /api/app/profile ─────────────────────────────
+  app.put('/api/app/profile', appAuth, async (req, res) => {
+    try {
+      const { name, email } = req.body;
+      await db.query(
+        `UPDATE app_customers SET name = ?, email = ? WHERE id = ?`,
+        [name || '', email || '', req.appUser.customer_id]
       );
-      const enrol = enrolRows[0];
- 
-      if (enrol?.razorpay_sub_status !== 'active') {
-        await sendSms(nudge.phone, SMS.mandateLink(nudge.short_url), 'mandateLink');
-        console.log(`[GMS Nudge] Sent nudge #${nudge.nudge_count} to ${nudge.phone} for ${nudge.enrolment_id}`);
- 
-        // ── Schedule Nudge 2 only if this was Nudge 1
-        if ((nudge.nudge_count || 1) === 1) {
-          await db.query(
-            `INSERT INTO gms_pending_nudges (enrolment_id, phone, short_url, send_after, expires_at, nudge_count)
-             VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 48 HOUR), ?, 2)`,
-            [nudge.enrolment_id, nudge.phone, nudge.short_url, nudge.expires_at]
-          );
-          console.log(`[GMS Nudge] Nudge 2 scheduled in 48 hours for ${nudge.enrolment_id}`);
-        } else {
-          console.log(`[GMS Nudge] Nudge 2 sent — no more nudges for ${nudge.enrolment_id}`);
-        }
-      } else {
-        console.log(`[GMS Nudge] Skipped ${nudge.enrolment_id} — autopay already active`);
+
+      // Sync to Shopify
+      if (req.appUser.shopify_id) {
+        const [first_name, ...rest] = (name || '').split(' ');
+        const last_name = rest.join(' ');
+        await shopifyPut(`customers/${req.appUser.shopify_id}.json`, {
+          customer: { id: req.appUser.shopify_id, first_name, last_name, email }
+        }).catch(e => console.warn('[APP AUTH] Shopify sync failed:', e.message));
       }
- 
-      // Mark current nudge as sent
-      await db.query('UPDATE gms_pending_nudges SET sent=1 WHERE id=?', [nudge.id]);
+
+      res.json({ success: true, message: 'Profile updated.' });
+    } catch (err) {
+      console.error('[APP AUTH] profile error:', err.message);
+      res.status(500).json({ success: false, message: 'Failed to update profile.' });
     }
-  } catch(e) {
-    console.error('[GMS Nudge] Error:', e.message);
-  }
-}
- 
-
-// ── Run nudge sender every 30 minutes ──
-cron.schedule('*/30 * * * *', sendPendingNudges);
-
-app.get('/api/test-nudge', async (req, res) => {
-  await sendPendingNudges();
-  res.json({ done: true });
-});
+  });
 
 
-app.get('/api/check-sub/:enrolmentId', async (req, res) => {
-  try {
-    const db = require('./db');
-    const Razorpay = require('razorpay');
-    const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
-    const [rows] = await db.query('SELECT razorpay_subscription_id, razorpay_sub_status FROM gms_enrolments WHERE enrolment_id=?', [req.params.enrolmentId]);
-    if (!rows.length) return res.json({ error: 'Not found' });
-    const sub = await rzp.subscriptions.fetch(rows[0].razorpay_subscription_id);
-    res.json({ db_status: rows[0].razorpay_sub_status, rzp_status: sub.status, short_url: sub.short_url });
-  } catch(e) { res.json({ error: e.message }); }
-});
+  // ── POST /api/app/logout ─────────────────────────────
+  app.post('/api/app/logout', appAuth, async (req, res) => {
+    try {
+      const header = req.headers['x-app-token'] || req.headers['authorization'];
+      const token  = header?.startsWith('Bearer ') ? header.slice(7) : header;
+      await db.query(`DELETE FROM app_sessions WHERE token = ?`, [token]);
+      console.log(`[APP AUTH] Logout: customer ${req.appUser.customer_id}`);
+      res.json({ success: true, message: 'Logged out.' });
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Logout failed.' });
+    }
+  });
+
+};
+
+// Export middleware for use in other route files
+module.exports.appAuth = appAuth;
