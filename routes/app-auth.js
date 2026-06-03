@@ -73,8 +73,15 @@ async function shopifyPut(path, body) {
 // ── Shopify customer helpers ─────────────────────────────
 
 async function findShopifyCustomer(mobile) {
-  const data = await shopifyGet(`customers/search.json?query=phone:+91${mobile}&limit=1`);
-  return data.customers?.[0] || null;
+  // Try E.164 format first: +919819495774
+  const phone = `+91${mobile}`;
+  const encoded = encodeURIComponent(phone);
+  const data = await shopifyGet(`customers/search.json?query=phone:${encoded}&limit=1`);
+  if (data.customers?.[0]) return data.customers[0];
+
+  // Fallback: list and filter (handles formatting differences)
+  const data2 = await shopifyGet(`customers.json?phone=${encoded}&limit=1`);
+  return data2.customers?.[0] || null;
 }
 
 async function createShopifyCustomer(mobile) {
