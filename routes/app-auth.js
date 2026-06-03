@@ -395,7 +395,7 @@ module.exports = function(app, cache) {
 };
 
 // NOTE: Add this route inside the module.exports = function(app, cache) { ... } block
-// Place it before the closing }; of the module
+// Place it before the closing  of the module
 
 /*
   // ── GET /api/app/refresh-gms-token ──────────────────
