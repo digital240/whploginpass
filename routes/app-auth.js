@@ -3,8 +3,9 @@ const axios            = require('axios');
 const { sendSms }      = require('../helpers/sms');
 const { generateOtp, cleanPhone } = require('../helpers/utils');
 const db               = require('../db');
+const { SMS } = require('../helpers/sms');
 
-const APP_OTP_MESSAGE = (otp) => `Dear user, your WHP Jewellers otp code is ${otp}`;
+ 
 
 // ── Tag customer with whp-app in Shopify ─────────────────
 async function tagShopifyCustomer(shopify_id) {
@@ -102,7 +103,7 @@ module.exports = function(app, cache) {
       cache.set(`app_otp:${mobile}`, { otp, verified: false }, 600);
       cache.set(`app_otp_attempts:${mobile}`, 0, 600);
 
-      await sendSms(mobile, APP_OTP_MESSAGE(otp));
+      await sendSms(mobile, SMS.otp(otp), 'otp');
 
       const [rows] = await db.query('SELECT id FROM app_customers WHERE mobile=?', [mobile]);
       return res.json({ success: true, message: `OTP sent to +91 ${mobile}`, isRegistered: rows.length > 0 });
