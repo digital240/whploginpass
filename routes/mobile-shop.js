@@ -133,3 +133,41 @@ module.exports = (app, cache) => {
   });
 
 };
+
+  // ── GET /api/app/menu ────────────────────────────────
+  // Fetch Shopify navigation menu via GraphQL
+  app.get('/api/app/menu', async (req, res) => {
+    try {
+      const token = await getShopifyToken();
+      const handle = req.query.handle || 'main-menu';
+
+      const query = `{
+        menu(handle: "${handle}") {
+          title
+          items {
+            id title url
+            items {
+              id title url
+              items {
+                id title url
+              }
+            }
+          }
+        }
+      }`;
+
+      const result = await axios.post(
+        `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/graphql.json`,
+        { query },
+        { headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' } }
+      );
+
+      const menu = result.data?.data?.menu;
+      if (!menu) return res.json({ success: true, items: [] });
+
+      res.json({ success: true, title: menu.title, items: menu.items || [] });
+    } catch (err) {
+      console.error('[SHOP] menu error:', err.message);
+      res.status(500).json({ success: false, message: 'Failed to fetch menu.' });
+    }
+  });
