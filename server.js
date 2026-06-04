@@ -71,6 +71,7 @@ require('./routes/razorpay')(app, cache);
 require('./routes/user-auth')(app, cache);
 require('./routes/user-profile')(app, cache);
 require('./routes/app-auth')(app, cache);
+require('./routes/mobile-shop')(app, cache);
 
 // ── Payment reminders + pay-now routes ──────────────────
 require('./routes/payments-reminder')(app, cache);
