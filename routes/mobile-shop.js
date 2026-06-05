@@ -123,27 +123,37 @@ module.exports = (app, cache) => {
     }
   });
 
-  // GET /api/app/menu — uses REST Admin API
+  // GET /api/app/menu — uses Storefront API
   app.get('/api/app/menu', async (req, res) => {
     try {
-      // Get all menus, find main-menu
-      const data = await shopifyGet('menus.json');
-      const menus = data.menus || [];
       const handle = req.query.handle || 'main-menu';
-      const menu = menus.find(m => m.handle === handle) || menus[0];
+      const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
+
+      const query = `{
+        menu(handle: ${handle}) {
+          title
+          items {
+            id title url
+            items {
+              id title url
+              items { id title url }
+            }
+          }
+        }
+      }`;
+
+      const result = await axios.post(
+        `https://${SHOPIFY_DOMAIN}/api/2024-04/graphql.json`,
+        { query },
+        { headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Storefront-Access-Token': storefrontToken,
+        }}
+      );
+
+      const menu = result.data?.data?.menu;
       if (!menu) return res.json({ success: true, items: [] });
-
-      // Map menu items
-      function mapItems(items) {
-        return (items || []).map(item => ({
-          id:    item.id,
-          title: item.title,
-          url:   item.url,
-          items: mapItems(item.children),
-        }));
-      }
-
-      res.json({ success: true, title: menu.title, items: mapItems(menu.items) });
+      res.json({ success: true, title: menu.title, items: menu.items || [] });
     } catch (err) {
       console.error('[SHOP] menu error:', err.message);
       res.status(500).json({ success: false, message: 'Failed to fetch menu.' });
