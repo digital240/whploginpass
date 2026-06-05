@@ -154,4 +154,19 @@ module.exports = (app, cache) => {
     }
   });
 
+
+
+  // Run ONCE to get storefront token, then save to .env
+app.get('/api/app/get-storefront-token', async (req, res) => {
+  try {
+    const token = await getShopifyToken();
+    const result = await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/storefront_access_tokens.json`,
+      { storefront_access_token: { title: 'WHP Mobile App' } },
+      { headers: { 'X-Shopify-Access-Token': token } }
+    );
+    res.json(result.data);
+  } catch(e) { res.json({ error: e.message }); }
+});
+
 }; // ← single closing brace for module.exports
