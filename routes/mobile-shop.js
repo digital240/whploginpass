@@ -123,31 +123,27 @@ module.exports = (app, cache) => {
     }
   });
 
-  // GET /api/app/menu
+  // GET /api/app/menu — uses REST Admin API
   app.get('/api/app/menu', async (req, res) => {
     try {
-      const token  = await getShopifyToken();
+      // Get all menus, find main-menu
+      const data = await shopifyGet('menus.json');
+      const menus = data.menus || [];
       const handle = req.query.handle || 'main-menu';
-      const query  = `{
-        menu(handle: "${handle}") {
-          title
-          items {
-            id title url
-            items {
-              id title url
-              items { id title url }
-            }
-          }
-        }
-      }`;
-      const result = await axios.post(
-        `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/graphql.json`,
-        { query },
-        { headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' } }
-      );
-      const menu = result.data?.data?.menu;
+      const menu = menus.find(m => m.handle === handle) || menus[0];
       if (!menu) return res.json({ success: true, items: [] });
-      res.json({ success: true, title: menu.title, items: menu.items || [] });
+
+      // Map menu items
+      function mapItems(items) {
+        return (items || []).map(item => ({
+          id:    item.id,
+          title: item.title,
+          url:   item.url,
+          items: mapItems(item.children),
+        }));
+      }
+
+      res.json({ success: true, title: menu.title, items: mapItems(menu.items) });
     } catch (err) {
       console.error('[SHOP] menu error:', err.message);
       res.status(500).json({ success: false, message: 'Failed to fetch menu.' });
