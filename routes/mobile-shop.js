@@ -130,7 +130,7 @@ module.exports = (app, cache) => {
       const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
 
       const query = `{
-        menu(handle: ${handle}) {
+        menu(handle: "${handle}") {
           title
           items {
             id title url
