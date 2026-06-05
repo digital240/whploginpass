@@ -154,28 +154,34 @@ module.exports = (app, cache) => {
     }
   });
 
-}; // ← single closing brace for module.exports
+  // GET /api/app/get-storefront-token (run once to generate)
+  app.get('/api/app/get-storefront-token', async (req, res) => {
+    try {
+      const token = await getShopifyToken();
+      const result = await axios.post(
+        `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/storefront_access_tokens.json`,
+        { storefront_access_token: { title: 'WHP Mobile App' } },
+        { headers: { 'X-Shopify-Access-Token': token } }
+      );
+      res.json(result.data);
+    } catch(e) { res.json({ error: e.message }); }
+  });
 
-  // ── POST /api/app/cart/create ────────────────────────
-  // Creates a Shopify cart via Storefront API and returns checkoutUrl
+  // POST /api/app/cart/create
   app.post('/api/app/cart/create', async (req, res) => {
     try {
-      const { lines } = req.body; // [{ merchandiseId, quantity }]
+      const { lines } = req.body;
       if (!lines?.length) return res.status(400).json({ success: false, message: 'No items.' });
 
-      // Use Storefront API (unauthenticated) for cart creation
+      const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
       const query = `
         mutation cartCreate($input: CartInput!) {
           cartCreate(input: $input) {
-            cart {
-              id
-              checkoutUrl
-            }
+            cart { id checkoutUrl }
             userErrors { field message }
           }
         }
       `;
-
       const variables = {
         input: {
           lines: lines.map(l => ({
@@ -185,17 +191,10 @@ module.exports = (app, cache) => {
         }
       };
 
-      // Use Storefront API with unauthenticated access
-      const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
       const result = await axios.post(
         `https://${SHOPIFY_DOMAIN}/api/2024-04/graphql.json`,
         { query, variables },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Shopify-Storefront-Access-Token': storefrontToken,
-          }
-        }
+        { headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': storefrontToken } }
       );
 
       const cart = result.data?.data?.cartCreate?.cart;
@@ -203,7 +202,6 @@ module.exports = (app, cache) => {
         const errors = result.data?.data?.cartCreate?.userErrors;
         return res.status(400).json({ success: false, message: errors?.[0]?.message || 'Cart creation failed.' });
       }
-
       res.json({ success: true, checkoutUrl: cart.checkoutUrl, cartId: cart.id });
     } catch (err) {
       console.error('[SHOP] cart create error:', err.message);
@@ -211,33 +209,16 @@ module.exports = (app, cache) => {
     }
   });
 
-  // ── POST /api/app/customer/token ─────────────────────
-  // Get Shopify customer access token for checkout prefill
+  // POST /api/app/customer/token
   app.post('/api/app/customer/token', async (req, res) => {
     try {
       const { shopify_customer_id } = req.body;
       if (!shopify_customer_id) return res.status(400).json({ success: false, message: 'shopify_customer_id required.' });
 
-      const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
-      const query = `
-        mutation customerAccessTokenCreate($input: CustomerAccessTokenCreateInput!) {
-          customerAccessTokenCreate(input: $input) {
-            customerAccessToken {
-              accessToken
-              expiresAt
-            }
-            customerUserErrors { code message }
-          }
-        }
-      `;
-
-      // We need email/phone to create a customer token
-      // Get customer details from Shopify Admin first
       const customerData = await shopifyGet(`customers/${shopify_customer_id}.json`);
       const customer = customerData.customer;
       if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
 
-      // Return customer details for checkout prefill
       res.json({
         success: true,
         customer: {
@@ -253,3 +234,5 @@ module.exports = (app, cache) => {
       res.status(500).json({ success: false, message: 'Failed to get customer details.' });
     }
   });
+
+}; // ← single closing brace for module.exports
