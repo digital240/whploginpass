@@ -154,19 +154,102 @@ module.exports = (app, cache) => {
     }
   });
 
-
-
-  // Run ONCE to get storefront token, then save to .env
-app.get('/api/app/get-storefront-token', async (req, res) => {
-  try {
-    const token = await getShopifyToken();
-    const result = await axios.post(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/storefront_access_tokens.json`,
-      { storefront_access_token: { title: 'WHP Mobile App' } },
-      { headers: { 'X-Shopify-Access-Token': token } }
-    );
-    res.json(result.data);
-  } catch(e) { res.json({ error: e.message }); }
-});
-
 }; // ← single closing brace for module.exports
+
+  // ── POST /api/app/cart/create ────────────────────────
+  // Creates a Shopify cart via Storefront API and returns checkoutUrl
+  app.post('/api/app/cart/create', async (req, res) => {
+    try {
+      const { lines } = req.body; // [{ merchandiseId, quantity }]
+      if (!lines?.length) return res.status(400).json({ success: false, message: 'No items.' });
+
+      // Use Storefront API (unauthenticated) for cart creation
+      const query = `
+        mutation cartCreate($input: CartInput!) {
+          cartCreate(input: $input) {
+            cart {
+              id
+              checkoutUrl
+            }
+            userErrors { field message }
+          }
+        }
+      `;
+
+      const variables = {
+        input: {
+          lines: lines.map(l => ({
+            merchandiseId: `gid://shopify/ProductVariant/${l.variantId}`,
+            quantity: l.quantity,
+          }))
+        }
+      };
+
+      // Use Storefront API with unauthenticated access
+      const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
+      const result = await axios.post(
+        `https://${SHOPIFY_DOMAIN}/api/2024-04/graphql.json`,
+        { query, variables },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Storefront-Access-Token': storefrontToken,
+          }
+        }
+      );
+
+      const cart = result.data?.data?.cartCreate?.cart;
+      if (!cart) {
+        const errors = result.data?.data?.cartCreate?.userErrors;
+        return res.status(400).json({ success: false, message: errors?.[0]?.message || 'Cart creation failed.' });
+      }
+
+      res.json({ success: true, checkoutUrl: cart.checkoutUrl, cartId: cart.id });
+    } catch (err) {
+      console.error('[SHOP] cart create error:', err.message);
+      res.status(500).json({ success: false, message: 'Failed to create cart.' });
+    }
+  });
+
+  // ── POST /api/app/customer/token ─────────────────────
+  // Get Shopify customer access token for checkout prefill
+  app.post('/api/app/customer/token', async (req, res) => {
+    try {
+      const { shopify_customer_id } = req.body;
+      if (!shopify_customer_id) return res.status(400).json({ success: false, message: 'shopify_customer_id required.' });
+
+      const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
+      const query = `
+        mutation customerAccessTokenCreate($input: CustomerAccessTokenCreateInput!) {
+          customerAccessTokenCreate(input: $input) {
+            customerAccessToken {
+              accessToken
+              expiresAt
+            }
+            customerUserErrors { code message }
+          }
+        }
+      `;
+
+      // We need email/phone to create a customer token
+      // Get customer details from Shopify Admin first
+      const customerData = await shopifyGet(`customers/${shopify_customer_id}.json`);
+      const customer = customerData.customer;
+      if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
+
+      // Return customer details for checkout prefill
+      res.json({
+        success: true,
+        customer: {
+          email:      customer.email || '',
+          firstName:  customer.first_name || '',
+          lastName:   customer.last_name || '',
+          phone:      customer.phone || '',
+          shopify_id: customer.id,
+        }
+      });
+    } catch (err) {
+      console.error('[SHOP] customer token error:', err.message);
+      res.status(500).json({ success: false, message: 'Failed to get customer details.' });
+    }
+  });
