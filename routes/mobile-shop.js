@@ -36,24 +36,38 @@ async function shopifyGet(path) {
 
 module.exports = (app, cache) => {
 
-  // GET /api/app/products
+  // GET /api/app/products — cursor-based pagination
   app.get('/api/app/products', async (req, res) => {
     try {
-      const { limit = 20, collection_id, vendor, product_type } = req.query;
-      let url = `products.json?limit=${limit}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
-      if (vendor)       url += `&vendor=${encodeURIComponent(vendor)}`;
-      if (product_type) url += `&product_type=${encodeURIComponent(product_type)}`;
+      const { limit = 50, collection_id, vendor, product_type, page_info } = req.query;
 
-      let data;
-      if (collection_id) {
-        // Fetch products with explicit fields including variants
+      const token = await getShopifyToken();
+      let url;
+
+      if (page_info) {
+        // Cursor pagination - page_info overrides all other params
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${page_info}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
+      } else if (collection_id) {
+        // First page of a collection
         const productIds = await shopifyGet(`collections/${collection_id}/products.json?limit=${limit}&fields=id`);
         const ids = (productIds.products || []).map(p => p.id).join(',');
-        if (!ids) { data = { products: [] }; }
-        else { data = await shopifyGet(`products.json?ids=${ids}&limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`); }
+        if (!ids) return res.json({ success: true, products: [], nextPageInfo: null });
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?ids=${ids}&limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
       } else {
-        data = await shopifyGet(url);
+        let q = `products.json?limit=${limit}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
+        if (vendor) q += `&vendor=${encodeURIComponent(vendor)}`;
+        if (product_type) q += `&product_type=${encodeURIComponent(product_type)}`;
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/${q}`;
       }
+
+      const result = await axios.get(url, { headers: { 'X-Shopify-Access-Token': token } });
+      const data   = result.data;
+
+      // Extract next page cursor from Link header
+      let nextPageInfo = null;
+      const linkHeader = result.headers?.link || '';
+      const nextMatch  = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;s*rel=next/);
+      if (nextMatch) nextPageInfo = nextMatch[1];
 
       const products = (data.products || []).map(p => ({
         id:        p.id,
@@ -70,7 +84,7 @@ module.exports = (app, cache) => {
         variantId: p.variants?.[0]?.id,
       }));
 
-      res.json({ success: true, products, count: products.length });
+      res.json({ success: true, products, count: products.length, nextPageInfo });
     } catch (err) {
       console.error('[SHOP] products error:', err.message);
       res.status(500).json({ success: false, message: 'Failed to fetch products.' });
