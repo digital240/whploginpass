@@ -39,8 +39,8 @@ module.exports = (app, cache) => {
   // GET /api/app/products
   app.get('/api/app/products', async (req, res) => {
     try {
-      const { limit = 20, collection_id, vendor, product_type } = req.query;
-      let url = `products.json?limit=${limit}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
+      const { limit = 20, collection_id, vendor, product_type, page = 1 } = req.query;
+      let url = `products.json?limit=${limit}&page=${page}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
       if (vendor)       url += `&vendor=${encodeURIComponent(vendor)}`;
       if (product_type) url += `&product_type=${encodeURIComponent(product_type)}`;
 
