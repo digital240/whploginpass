@@ -173,7 +173,7 @@ module.exports = (app, cache) => {
     } catch(e) { res.json({ error: e.message }); }
   });
 
-  // POST /api/app/cart/create
+  // POST /api/app/cart/create — uses checkoutCreate for direct checkout URL
   app.post('/api/app/cart/create', async (req, res) => {
     try {
       const { lines } = req.body;
@@ -181,19 +181,20 @@ module.exports = (app, cache) => {
 
       const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
       const query = `
-        mutation cartCreate($input: CartInput!) {
-          cartCreate(input: $input) {
-            cart { id checkoutUrl }
-            userErrors { field message }
+        mutation checkoutCreate($input: CheckoutCreateInput!) {
+          checkoutCreate(input: $input) {
+            checkout { id webUrl }
+            checkoutUserErrors { code field message }
           }
         }
       `;
       const variables = {
         input: {
-          lines: lines.map(l => ({
-            merchandiseId: `gid://shopify/ProductVariant/${l.variantId}`,
+          lineItems: lines.map(l => ({
+            variantId: `gid://shopify/ProductVariant/${l.variantId}`,
             quantity: l.quantity,
-          }))
+          })),
+          customAttributes: [{ key: 'source', value: 'whp-app' }],
         }
       };
 
@@ -203,15 +204,17 @@ module.exports = (app, cache) => {
         { headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': storefrontToken } }
       );
 
-      const cart = result.data?.data?.cartCreate?.cart;
-      if (!cart) {
-        const errors = result.data?.data?.cartCreate?.userErrors;
-        return res.status(400).json({ success: false, message: errors?.[0]?.message || 'Cart creation failed.' });
+      const checkout = result.data?.data?.checkoutCreate?.checkout;
+      const errors   = result.data?.data?.checkoutCreate?.checkoutUserErrors;
+      console.log('[SHOP] checkout result:', JSON.stringify(result.data?.data));
+
+      if (!checkout) {
+        return res.status(400).json({ success: false, message: errors?.[0]?.message || 'Checkout creation failed.' });
       }
-      res.json({ success: true, checkoutUrl: cart.checkoutUrl, cartId: cart.id });
+      res.json({ success: true, checkoutUrl: checkout.webUrl, cartId: checkout.id });
     } catch (err) {
       console.error('[SHOP] cart create error:', err.message);
-      res.status(500).json({ success: false, message: 'Failed to create cart.' });
+      res.status(500).json({ success: false, message: 'Failed to create checkout.' });
     }
   });
 
