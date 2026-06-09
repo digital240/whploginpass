@@ -73,16 +73,16 @@ module.exports = (app, cache) => {
     }
   });
 
-  // GET /api/app/collections
+  // GET /api/app/collections — fetches both custom + smart collections
   app.get('/api/app/collections', async (req, res) => {
     try {
-      const data = await shopifyGet('custom_collections.json?limit=20&fields=id,title,handle,image');
-      const collections = (data.custom_collections || []).map(c => ({
-        id:     c.id,
-        title:  c.title,
-        handle: c.handle,
-        image:  c.image?.src || null,
-      }));
+      const [customData, smartData] = await Promise.all([
+        shopifyGet('custom_collections.json?limit=50&fields=id,title,handle,image'),
+        shopifyGet('smart_collections.json?limit=50&fields=id,title,handle,image'),
+      ]);
+      const custom = (customData.custom_collections || []).map(c => ({ id: c.id, title: c.title, handle: c.handle, image: c.image?.src || null }));
+      const smart  = (smartData.smart_collections  || []).map(c => ({ id: c.id, title: c.title, handle: c.handle, image: c.image?.src || null }));
+      const collections = [...custom, ...smart];
       res.json({ success: true, collections });
     } catch (err) {
       console.error('[SHOP] collections error:', err.message);
