@@ -84,7 +84,15 @@ module.exports = (app, cache) => {
         variantId: p.variants?.[0]?.id,
       }));
 
-      res.json({ success: true, products, count: products.length, nextPageInfo });
+      // Get total count (only on first page)
+      let total = null;
+      if (!page_info && !collection_id) {
+        try {
+          const countData = await shopifyGet('products/count.json?status=active');
+          total = countData.count;
+        } catch(_) {}
+      }
+      res.json({ success: true, products, count: products.length, nextPageInfo, total });
     } catch (err) {
       console.error('[SHOP] products error:', err.message);
       res.status(500).json({ success: false, message: 'Failed to fetch products.' });
