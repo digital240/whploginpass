@@ -46,7 +46,11 @@ module.exports = (app, cache) => {
 
       let data;
       if (collection_id) {
-        data = await shopifyGet(`collections/${collection_id}/products.json?limit=${limit}`);
+        // Fetch products with explicit fields including variants
+        const productIds = await shopifyGet(`collections/${collection_id}/products.json?limit=${limit}&fields=id`);
+        const ids = (productIds.products || []).map(p => p.id).join(',');
+        if (!ids) { data = { products: [] }; }
+        else { data = await shopifyGet(`products.json?ids=${ids}&limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`); }
       } else {
         data = await shopifyGet(url);
       }
