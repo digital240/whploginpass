@@ -46,7 +46,7 @@ module.exports = (app, cache) => {
 
       let data;
       if (collection_id) {
-        data = await shopifyGet(`collections/${collection_id}/products.json?limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`);
+        data = await shopifyGet(`collections/${collection_id}/products.json?limit=${limit}`);
       } else {
         data = await shopifyGet(url);
       }
