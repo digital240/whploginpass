@@ -65,7 +65,7 @@ module.exports = (app, cache) => {
 
       // Extract next page cursor from Link header
       let nextPageInfo = null;
-      const linkHeader = result.headers?.link || '';
+      const linkHeader = result.headers?.link || result.headers?.Link || ''; console.log('[SHOP] Link header:', linkHeader?.substring(0, 100));
       const nextMatch  = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;s*rel=next/);
       if (nextMatch) nextPageInfo = nextMatch[1];
 
