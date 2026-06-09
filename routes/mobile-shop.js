@@ -65,9 +65,17 @@ module.exports = (app, cache) => {
 
       // Extract next page cursor from Link header
       let nextPageInfo = null;
-      const linkHeader = result.headers?.link || result.headers?.Link || ''; console.log('[SHOP] Link header:', linkHeader?.substring(0, 100));
-      const nextMatch  = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;s*rel=next/);
-      if (nextMatch) nextPageInfo = nextMatch[1];
+      const linkHeader = result.headers?.link || result.headers?.Link || '';
+      if (linkHeader) {
+        // Find rel=next link and extract page_info
+        const parts = linkHeader.split(',');
+        for (const part of parts) {
+          if (part.includes('rel="next"')) {
+            const piMatch = part.match(/page_info=([^&>s"]+)/);
+            if (piMatch) { nextPageInfo = decodeURIComponent(piMatch[1]); break; }
+          }
+        }
+      }
 
       const products = (data.products || []).map(p => ({
         id:        p.id,
