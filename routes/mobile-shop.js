@@ -46,7 +46,7 @@ module.exports = (app, cache) => {
 
       if (page_info) {
         // Cursor pagination - NOTE: cannot use fields with page_info
-        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${page_info}`;
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${encodeURIComponent(page_info)}`;
       } else if (collection_id) {
         // First page of a collection
         const productIds = await shopifyGet(`collections/${collection_id}/products.json?limit=${limit}&fields=id`);
