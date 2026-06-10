@@ -57,19 +57,34 @@ module.exports = (app, cache) => {
   app.get('/api/app/products', async (req, res) => {
     try {
       const { limit = 50, collection_id, vendor, product_type, page_info } = req.query;
+      req._colOffset = page_info && collection_id ? parseInt(page_info) : 0;
       const token = await getShopifyToken();
       let url;
 
       if (page_info) {
         url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${encodeURIComponent(page_info)}`;
       } else if (collection_id) {
-        const productIds = await shopifyGet(`collections/${collection_id}/products.json?limit=250&fields=id`);
-        const allIds = (productIds.products || []).map(p => p.id);
+        // Fetch ALL product IDs from collection (paginate through all pages)
+        let allIds = [];
+        let colPage = 1;
+        while (true) {
+          const batch = await shopifyGet(`collections/${collection_id}/products.json?limit=250&page=${colPage}&fields=id`);
+          const batchIds = (batch.products || []).map(p => p.id);
+          allIds = [...allIds, ...batchIds];
+          if (batchIds.length < 250) break;
+          colPage++;
+          if (colPage > 40) break; // safety limit
+        }
         if (!allIds.length) return res.json({ success: true, products: [], nextPageInfo: null, total: 0 });
-        const pageIds = allIds.slice(0, limit).join(',');
-        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?ids=${pageIds}&limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
-        // Store total for response
+        // Apply pagination using offset from page_info index
+        const offset = req._colOffset || 0;
+        const pageIds = allIds.slice(offset, offset + limit).join(',');
+        const nextOffset = offset + limit;
+        const hasNextPage = nextOffset < allIds.length;
+        // Store for response
         req._collectionTotal = allIds.length;
+        req._nextColOffset = hasNextPage ? nextOffset : null;
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?ids=${pageIds}&limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
       } else {
         let q = `products.json?limit=${limit}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
         if (vendor)       q += `&vendor=${encodeURIComponent(vendor)}`;
@@ -105,7 +120,8 @@ module.exports = (app, cache) => {
         } catch(_) {}
       }
 
-      res.json({ success: true, products, count: products.length, nextPageInfo, total: req._collectionTotal || total });
+      const finalNextPage = collection_id ? (req._nextColOffset ? String(req._nextColOffset) : null) : nextPageInfo;
+      res.json({ success: true, products, count: products.length, nextPageInfo: finalNextPage, total: req._collectionTotal || total });
     } catch (err) {
       console.error('[SHOP] products error:', err.message);
       res.status(500).json({ success: false, message: 'Failed to fetch products.' });
