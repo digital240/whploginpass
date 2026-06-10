@@ -34,6 +34,14 @@ async function shopifyGet(path) {
   return res.data;
 }
 
+async function shopifyGetWithHeaders(path) {
+  const token = await getShopifyToken();
+  const res = await axios.get(`https://${SHOPIFY_DOMAIN}/admin/api/2024-04/${path}`, {
+    headers: { 'X-Shopify-Access-Token': token }
+  });
+  return { data: res.data, headers: res.headers };
+}
+
 function extractNextCursor(linkHeader) {
   if (!linkHeader) return null;
   try {
@@ -57,34 +65,22 @@ module.exports = (app, cache) => {
   app.get('/api/app/products', async (req, res) => {
     try {
       const { limit = 50, collection_id, vendor, product_type, page_info } = req.query;
-      req._colOffset = page_info && collection_id ? parseInt(page_info) : 0;
       const token = await getShopifyToken();
       let url;
+      let collectionTotal = null;
 
       if (page_info) {
+        // Cursor pagination for all products (no fields param allowed)
         url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${encodeURIComponent(page_info)}`;
       } else if (collection_id) {
-        // Fetch ALL product IDs from collection (paginate through all pages)
-        let allIds = [];
-        let colPage = 1;
-        while (true) {
-          const batch = await shopifyGet(`collections/${collection_id}/products.json?limit=250&page=${colPage}&fields=id`);
-          const batchIds = (batch.products || []).map(p => p.id);
-          allIds = [...allIds, ...batchIds];
-          if (batchIds.length < 250) break;
-          colPage++;
-          if (colPage > 40) break; // safety limit
-        }
-        if (!allIds.length) return res.json({ success: true, products: [], nextPageInfo: null, total: 0 });
-        // Apply pagination using offset from page_info index
-        const offset = req._colOffset || 0;
-        const pageIds = allIds.slice(offset, offset + limit).join(',');
-        const nextOffset = offset + limit;
-        const hasNextPage = nextOffset < allIds.length;
-        // Store for response
-        req._collectionTotal = allIds.length;
-        req._nextColOffset = hasNextPage ? nextOffset : null;
-        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?ids=${pageIds}&limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
+        // Use collection products endpoint directly with cursor pagination
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/collections/${collection_id}/products.json?limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
+
+        // Get total count for collection
+        try {
+          const countData = await shopifyGet(`collections/${collection_id}/products/count.json`);
+          collectionTotal = countData.count;
+        } catch(_) {}
       } else {
         let q = `products.json?limit=${limit}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
         if (vendor)       q += `&vendor=${encodeURIComponent(vendor)}`;
@@ -112,16 +108,16 @@ module.exports = (app, cache) => {
         variantId:   p.variants?.[0]?.id,
       }));
 
-      let total = null;
-      if (!page_info && !collection_id) {
+      // Get total for non-collection first page
+      let total = collectionTotal;
+      if (!total && !page_info && !collection_id) {
         try {
           const countData = await shopifyGet('products/count.json?status=active');
           total = countData.count;
         } catch(_) {}
       }
 
-      const finalNextPage = collection_id ? (req._nextColOffset ? String(req._nextColOffset) : null) : nextPageInfo;
-      res.json({ success: true, products, count: products.length, nextPageInfo: finalNextPage, total: req._collectionTotal || total });
+      res.json({ success: true, products, count: products.length, nextPageInfo, total });
     } catch (err) {
       console.error('[SHOP] products error:', err.message);
       res.status(500).json({ success: false, message: 'Failed to fetch products.' });
