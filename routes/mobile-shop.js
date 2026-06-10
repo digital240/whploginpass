@@ -63,10 +63,13 @@ module.exports = (app, cache) => {
       if (page_info) {
         url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${encodeURIComponent(page_info)}`;
       } else if (collection_id) {
-        const productIds = await shopifyGet(`collections/${collection_id}/products.json?limit=${limit}&fields=id`);
-        const ids = (productIds.products || []).map(p => p.id).join(',');
-        if (!ids) return res.json({ success: true, products: [], nextPageInfo: null });
-        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?ids=${ids}&limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
+        const productIds = await shopifyGet(`collections/${collection_id}/products.json?limit=250&fields=id`);
+        const allIds = (productIds.products || []).map(p => p.id);
+        if (!allIds.length) return res.json({ success: true, products: [], nextPageInfo: null, total: 0 });
+        const pageIds = allIds.slice(0, limit).join(',');
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?ids=${pageIds}&limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
+        // Store total for response
+        req._collectionTotal = allIds.length;
       } else {
         let q = `products.json?limit=${limit}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
         if (vendor)       q += `&vendor=${encodeURIComponent(vendor)}`;
@@ -102,7 +105,7 @@ module.exports = (app, cache) => {
         } catch(_) {}
       }
 
-      res.json({ success: true, products, count: products.length, nextPageInfo, total });
+      res.json({ success: true, products, count: products.length, nextPageInfo, total: req._collectionTotal || total });
     } catch (err) {
       console.error('[SHOP] products error:', err.message);
       res.status(500).json({ success: false, message: 'Failed to fetch products.' });
