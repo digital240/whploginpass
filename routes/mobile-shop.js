@@ -86,20 +86,18 @@ module.exports = (app, cache) => {
                 images(first: 5) { nodes { url } }
                 priceRange { minVariantPrice { amount } }
                 compareAtPriceRange { minVariantPrice { amount } }
-                variants(first: 1) { nodes { id price compareAtPrice availableForSale } }
+                variants(first: 1) { nodes { id availableForSale price { amount } compareAtPrice { amount } } }
               }
             }
           }
         }`;
 
-        console.log('[SHOP] GQL query:', gqlQuery.substring(0, 200));
         const gqlResult = await axios.post(
           `https://${SHOPIFY_DOMAIN}/api/2024-04/graphql.json`,
           { query: gqlQuery },
           { headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': storefrontToken } }
         );
 
-        console.log('[SHOP] GQL response:', JSON.stringify(gqlResult.data).substring(0, 300));
         const colData = gqlResult.data?.data?.collection;
         if (!colData) return res.json({ success: true, products: [], nextPageInfo: null, total: 0 });
 
@@ -108,8 +106,8 @@ module.exports = (app, cache) => {
 
         const sfProducts = nodes.map(p => {
           const variantId = p.variants?.nodes?.[0]?.id?.replace('gid://shopify/ProductVariant/', '');
-          const price     = p.variants?.nodes?.[0]?.price || p.priceRange?.minVariantPrice?.amount || '0';
-          const compare   = p.variants?.nodes?.[0]?.compareAtPrice || p.compareAtPriceRange?.minVariantPrice?.amount || null;
+          const price     = p.variants?.nodes?.[0]?.price?.amount || p.priceRange?.minVariantPrice?.amount || '0';
+          const compare   = p.variants?.nodes?.[0]?.compareAtPrice?.amount || p.compareAtPriceRange?.minVariantPrice?.amount || null;
           const numId     = p.id?.replace('gid://shopify/Product/', '');
           return {
             id:          parseInt(numId),
