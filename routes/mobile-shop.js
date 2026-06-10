@@ -67,15 +67,20 @@ module.exports = (app, cache) => {
       let nextPageInfo = null;
       const linkHeader = result.headers?.link || result.headers?.Link || '';
       if (linkHeader) {
-        // Find rel=next link and extract page_info
-        const parts = linkHeader.split(',');
-        for (const part of parts) {
-          if (part.includes('rel="next"')) {
-            const piMatch = part.match(/page_info=([^&>s"]+)/);
-            if (piMatch) { nextPageInfo = decodeURIComponent(piMatch[1]); break; }
+        // Find rel=next link using URL parse
+        try {
+          const links = linkHeader.split(',');
+          for (const link of links) {
+            if (link.includes('rel="next"')) {
+              const urlMatch = link.match(/<([^>]+)>/);
+              if (urlMatch) {
+                const urlObj = new URL(urlMatch[1]);
+                nextPageInfo = urlObj.searchParams.get('page_info');
+              }
+              break;
+            }
           }
-        }
-      }
+        } catch(_) {}
 
       const products = (data.products || []).map(p => ({
         id:        p.id,
