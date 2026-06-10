@@ -73,14 +73,71 @@ module.exports = (app, cache) => {
         // Cursor pagination for all products (no fields param allowed)
         url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${encodeURIComponent(page_info)}`;
       } else if (collection_id) {
-        // Use collection products endpoint directly with cursor pagination
-        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/collections/${collection_id}/products.json?limit=${limit}`;
+        // Use Storefront API for collection products (returns full price/variant data)
+        const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
+        const afterCursor = page_info ? `, after: \"\"\" + page_info + "\"\"\"` : '';
+        const gqlQuery = `{
+          collection(id: \"gid://shopify/Collection/${collection_id}\") {
+            title
+            products(first: ${limit}${afterCursor}) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                id title handle productType vendor tags
+                images(first: 5) { nodes { url } }
+                priceRange { minVariantPrice { amount } }
+                compareAtPriceRange { minVariantPrice { amount } }
+                variants(first: 1) { nodes { id price compareAtPrice availableForSale } }
+              }
+            }
+          }
+        }`;
 
-        // Get total count for collection
+        const gqlResult = await axios.post(
+          `https://${SHOPIFY_DOMAIN}/api/2024-04/graphql.json`,
+          { query: gqlQuery },
+          { headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': storefrontToken } }
+        );
+
+        const colData = gqlResult.data?.data?.collection;
+        if (!colData) return res.json({ success: true, products: [], nextPageInfo: null, total: 0 });
+
+        const nodes = colData.products?.nodes || [];
+        const pageInfo = colData.products?.pageInfo;
+
+        const sfProducts = nodes.map(p => {
+          const variantId = p.variants?.nodes?.[0]?.id?.replace('gid://shopify/ProductVariant/', '');
+          const price     = p.variants?.nodes?.[0]?.price || p.priceRange?.minVariantPrice?.amount || '0';
+          const compare   = p.variants?.nodes?.[0]?.compareAtPrice || p.compareAtPriceRange?.minVariantPrice?.amount || null;
+          const numId     = p.id?.replace('gid://shopify/Product/', '');
+          return {
+            id:          parseInt(numId),
+            title:       p.title,
+            handle:      p.handle,
+            type:        p.productType,
+            vendor:      p.vendor,
+            tags:        p.tags?.join(', '),
+            price:       price,
+            comparePrice: compare && compare !== '0.0' ? compare : null,
+            image:       p.images?.nodes?.[0]?.url || null,
+            images:      (p.images?.nodes || []).map(i => i.url),
+            inStock:     p.variants?.nodes?.[0]?.availableForSale !== false,
+            variantId:   parseInt(variantId),
+          };
+        });
+
+        // Get total count
         try {
           const countData = await shopifyGet(`products/count.json?collection_id=${collection_id}`);
           collectionTotal = countData.count;
         } catch(_) {}
+
+        return res.json({
+          success: true,
+          products: sfProducts,
+          count: sfProducts.length,
+          nextPageInfo: pageInfo?.hasNextPage ? pageInfo.endCursor : null,
+          total: collectionTotal,
+        });
       } else {
         let q = `products.json?limit=${limit}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
         if (vendor)       q += `&vendor=${encodeURIComponent(vendor)}`;
