@@ -69,13 +69,10 @@ module.exports = (app, cache) => {
       let url;
       let collectionTotal = null;
 
-      if (page_info) {
-        // Cursor pagination for all products (no fields param allowed)
-        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${encodeURIComponent(page_info)}`;
-      } else if (collection_id) {
+      if (collection_id) {
         // Use Storefront API for collection products (returns full price/variant data)
         const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
-        const afterCursor = page_info ? `, after: "${page_info}"` : '';
+        const afterCursor = page_info ? `, after: "${decodeURIComponent(page_info)}"` : '';
         const gqlQuery = `{
           collection(id: \"gid://shopify/Collection/${collection_id}\") {
             title
@@ -138,6 +135,9 @@ module.exports = (app, cache) => {
           nextPageInfo: pageInfo?.hasNextPage ? pageInfo.endCursor : null,
           total: collectionTotal,
         });
+      } else if (page_info) {
+        // Cursor pagination for all products
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${encodeURIComponent(page_info)}`;
       } else {
         let q = `products.json?limit=${limit}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
         if (vendor)       q += `&vendor=${encodeURIComponent(vendor)}`;
