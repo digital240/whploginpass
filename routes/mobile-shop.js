@@ -74,11 +74,11 @@ module.exports = (app, cache) => {
         url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${encodeURIComponent(page_info)}`;
       } else if (collection_id) {
         // Use collection products endpoint directly with cursor pagination
-        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/collections/${collection_id}/products.json?limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/collections/${collection_id}/products.json?limit=${limit}`;
 
         // Get total count for collection
         try {
-          const countData = await shopifyGet(`collections/${collection_id}/products/count.json`);
+          const countData = await shopifyGet(`products/count.json?collection_id=${collection_id}`);
           collectionTotal = countData.count;
         } catch(_) {}
       } else {
