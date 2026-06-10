@@ -45,8 +45,8 @@ module.exports = (app, cache) => {
       let url;
 
       if (page_info) {
-        // Cursor pagination - page_info overrides all other params
-        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${page_info}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
+        // Cursor pagination - NOTE: cannot use fields with page_info
+        url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${page_info}`;
       } else if (collection_id) {
         // First page of a collection
         const productIds = await shopifyGet(`collections/${collection_id}/products.json?limit=${limit}&fields=id`);
@@ -66,7 +66,6 @@ module.exports = (app, cache) => {
       // Extract next page cursor from Link header
       let nextPageInfo = null;
       const linkHeader = result.headers?.link || result.headers?.Link || '';
-      console.log('[SHOP] FULL link header:', linkHeader);
       if (linkHeader) {
         // Find rel=next link and extract page_info
         const parts = linkHeader.split(',');
