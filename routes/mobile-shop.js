@@ -34,28 +34,42 @@ async function shopifyGet(path) {
   return res.data;
 }
 
+function extractNextCursor(linkHeader) {
+  if (!linkHeader) return null;
+  try {
+    const links = linkHeader.split(',');
+    for (const link of links) {
+      if (link.includes('rel="next"')) {
+        const urlMatch = link.match(/<([^>]+)>/);
+        if (urlMatch) {
+          const urlObj = new URL(urlMatch[1]);
+          return urlObj.searchParams.get('page_info');
+        }
+      }
+    }
+  } catch(_) {}
+  return null;
+}
+
 module.exports = (app, cache) => {
 
-  // GET /api/app/products — cursor-based pagination
+  // GET /api/app/products
   app.get('/api/app/products', async (req, res) => {
     try {
       const { limit = 50, collection_id, vendor, product_type, page_info } = req.query;
-
       const token = await getShopifyToken();
       let url;
 
       if (page_info) {
-        // Cursor pagination - NOTE: cannot use fields with page_info
         url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?limit=${limit}&page_info=${encodeURIComponent(page_info)}`;
       } else if (collection_id) {
-        // First page of a collection
         const productIds = await shopifyGet(`collections/${collection_id}/products.json?limit=${limit}&fields=id`);
         const ids = (productIds.products || []).map(p => p.id).join(',');
         if (!ids) return res.json({ success: true, products: [], nextPageInfo: null });
         url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/products.json?ids=${ids}&limit=${limit}&fields=id,title,handle,variants,images,product_type,vendor,tags`;
       } else {
         let q = `products.json?limit=${limit}&status=active&fields=id,title,handle,variants,images,product_type,vendor,tags`;
-        if (vendor) q += `&vendor=${encodeURIComponent(vendor)}`;
+        if (vendor)       q += `&vendor=${encodeURIComponent(vendor)}`;
         if (product_type) q += `&product_type=${encodeURIComponent(product_type)}`;
         url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-04/${q}`;
       }
@@ -63,41 +77,23 @@ module.exports = (app, cache) => {
       const result = await axios.get(url, { headers: { 'X-Shopify-Access-Token': token } });
       const data   = result.data;
 
-      // Extract next page cursor from Link header
-      let nextPageInfo = null;
-      const linkHeader = result.headers?.link || result.headers?.Link || '';
-      if (linkHeader) {
-        // Find rel=next link using URL parse
-        try {
-          const links = linkHeader.split(',');
-          for (const link of links) {
-            if (link.includes('rel="next"')) {
-              const urlMatch = link.match(/<([^>]+)>/);
-              if (urlMatch) {
-                const urlObj = new URL(urlMatch[1]);
-                nextPageInfo = urlObj.searchParams.get('page_info');
-              }
-              break;
-            }
-          }
-        } catch(_) {}
+      const nextPageInfo = extractNextCursor(result.headers?.link || result.headers?.Link || '');
 
       const products = (data.products || []).map(p => ({
-        id:        p.id,
-        title:     p.title,
-        handle:    p.handle,
-        type:      p.product_type,
-        vendor:    p.vendor,
-        tags:      p.tags,
-        price:     p.variants?.[0]?.price || '0',
+        id:          p.id,
+        title:       p.title,
+        handle:      p.handle,
+        type:        p.product_type,
+        vendor:      p.vendor,
+        tags:        p.tags,
+        price:       p.variants?.[0]?.price || '0',
         comparePrice: p.variants?.[0]?.compare_at_price || null,
-        image:     p.images?.[0]?.src || null,
-        images:    (p.images || []).map(i => i.src),
-        inStock:   p.variants?.some(v => v.inventory_quantity > 0 || v.inventory_management === null),
-        variantId: p.variants?.[0]?.id,
+        image:       p.images?.[0]?.src || null,
+        images:      (p.images || []).map(i => i.src),
+        inStock:     p.variants?.some(v => v.inventory_quantity > 0 || v.inventory_management === null),
+        variantId:   p.variants?.[0]?.id,
       }));
 
-      // Get total count (only on first page)
       let total = null;
       if (!page_info && !collection_id) {
         try {
@@ -105,6 +101,7 @@ module.exports = (app, cache) => {
           total = countData.count;
         } catch(_) {}
       }
+
       res.json({ success: true, products, count: products.length, nextPageInfo, total });
     } catch (err) {
       console.error('[SHOP] products error:', err.message);
@@ -112,7 +109,7 @@ module.exports = (app, cache) => {
     }
   });
 
-  // GET /api/app/collections — fetches both custom + smart collections
+  // GET /api/app/collections
   app.get('/api/app/collections', async (req, res) => {
     try {
       const [customData, smartData] = await Promise.all([
@@ -121,8 +118,7 @@ module.exports = (app, cache) => {
       ]);
       const custom = (customData.custom_collections || []).map(c => ({ id: c.id, title: c.title, handle: c.handle, image: c.image?.src || null }));
       const smart  = (smartData.smart_collections  || []).map(c => ({ id: c.id, title: c.title, handle: c.handle, image: c.image?.src || null }));
-      const collections = [...custom, ...smart];
-      res.json({ success: true, collections });
+      res.json({ success: true, collections: [...custom, ...smart] });
     } catch (err) {
       console.error('[SHOP] collections error:', err.message);
       res.status(500).json({ success: false, message: 'Failed to fetch collections.' });
@@ -162,12 +158,11 @@ module.exports = (app, cache) => {
     }
   });
 
-  // GET /api/app/menu — uses Storefront API
+  // GET /api/app/menu
   app.get('/api/app/menu', async (req, res) => {
     try {
       const handle = req.query.handle || 'main-menu';
       const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
-
       const query = `{
         menu(handle: "${handle}") {
           title
@@ -180,16 +175,11 @@ module.exports = (app, cache) => {
           }
         }
       }`;
-
       const result = await axios.post(
         `https://${SHOPIFY_DOMAIN}/api/2024-04/graphql.json`,
         { query },
-        { headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Storefront-Access-Token': storefrontToken,
-        }}
+        { headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': storefrontToken } }
       );
-
       const menu = result.data?.data?.menu;
       if (!menu) return res.json({ success: true, items: [] });
       res.json({ success: true, title: menu.title, items: menu.items || [] });
@@ -199,7 +189,7 @@ module.exports = (app, cache) => {
     }
   });
 
-  // GET /api/app/get-storefront-token (run once to generate)
+  // GET /api/app/get-storefront-token
   app.get('/api/app/get-storefront-token', async (req, res) => {
     try {
       const token = await getShopifyToken();
@@ -212,45 +202,37 @@ module.exports = (app, cache) => {
     } catch(e) { res.json({ error: e.message }); }
   });
 
-  // POST /api/app/cart/create — uses checkoutCreate for direct checkout URL
+  // POST /api/app/cart/create
   app.post('/api/app/cart/create', async (req, res) => {
     try {
       const { lines } = req.body;
       if (!lines?.length) return res.status(400).json({ success: false, message: 'No items.' });
-
       const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
       const query = `
-        mutation checkoutCreate($input: CheckoutCreateInput!) {
-          checkoutCreate(input: $input) {
-            checkout { id webUrl }
-            checkoutUserErrors { code field message }
+        mutation cartCreate($input: CartInput!) {
+          cartCreate(input: $input) {
+            cart { id checkoutUrl }
+            userErrors { field message }
           }
         }
       `;
       const variables = {
         input: {
-          lineItems: lines.map(l => ({
-            variantId: `gid://shopify/ProductVariant/${l.variantId}`,
+          lines: lines.map(l => ({
+            merchandiseId: `gid://shopify/ProductVariant/${l.variantId}`,
             quantity: l.quantity,
           })),
-          customAttributes: [{ key: 'source', value: 'whp-app' }],
+          attributes: [{ key: 'source', value: 'whp-app' }],
         }
       };
-
       const result = await axios.post(
         `https://${SHOPIFY_DOMAIN}/api/2024-04/graphql.json`,
         { query, variables },
         { headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': storefrontToken } }
       );
-
-      const checkout = result.data?.data?.checkoutCreate?.checkout;
-      const errors   = result.data?.data?.checkoutCreate?.checkoutUserErrors;
-      console.log('[SHOP] checkout result:', JSON.stringify(result.data?.data));
-
-      if (!checkout) {
-        return res.status(400).json({ success: false, message: errors?.[0]?.message || 'Checkout creation failed.' });
-      }
-      res.json({ success: true, checkoutUrl: checkout.webUrl, cartId: checkout.id });
+      const cart = result.data?.data?.cartCreate?.cart;
+      if (!cart) return res.status(400).json({ success: false, message: 'Cart creation failed.' });
+      res.json({ success: true, checkoutUrl: cart.checkoutUrl, cartId: cart.id });
     } catch (err) {
       console.error('[SHOP] cart create error:', err.message);
       res.status(500).json({ success: false, message: 'Failed to create checkout.' });
@@ -262,11 +244,9 @@ module.exports = (app, cache) => {
     try {
       const { shopify_customer_id } = req.body;
       if (!shopify_customer_id) return res.status(400).json({ success: false, message: 'shopify_customer_id required.' });
-
       const customerData = await shopifyGet(`customers/${shopify_customer_id}.json`);
       const customer = customerData.customer;
       if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
-
       res.json({
         success: true,
         customer: {
