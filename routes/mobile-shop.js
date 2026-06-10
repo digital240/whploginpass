@@ -75,7 +75,7 @@ module.exports = (app, cache) => {
       } else if (collection_id) {
         // Use Storefront API for collection products (returns full price/variant data)
         const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN;
-        const afterCursor = page_info ? `, after: \"\"\" + page_info + "\"\"\"` : '';
+        const afterCursor = page_info ? `, after: "${page_info}"` : '';
         const gqlQuery = `{
           collection(id: \"gid://shopify/Collection/${collection_id}\") {
             title
@@ -92,12 +92,14 @@ module.exports = (app, cache) => {
           }
         }`;
 
+        console.log('[SHOP] GQL query:', gqlQuery.substring(0, 200));
         const gqlResult = await axios.post(
           `https://${SHOPIFY_DOMAIN}/api/2024-04/graphql.json`,
           { query: gqlQuery },
           { headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': storefrontToken } }
         );
 
+        console.log('[SHOP] GQL response:', JSON.stringify(gqlResult.data).substring(0, 300));
         const colData = gqlResult.data?.data?.collection;
         if (!colData) return res.json({ success: true, products: [], nextPageInfo: null, total: 0 });
 
