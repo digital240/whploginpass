@@ -18,7 +18,7 @@ db.query('SELECT 1')
 // ── CORS — must be first ─────────────────────────────────
 app.use(function(req, res, next) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+ res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-shop-domain, x-user-token, x-staff-token, x-app-token');
   if (req.method === 'OPTIONS') return res.status(200).end();
   next();
