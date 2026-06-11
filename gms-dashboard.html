@@ -1191,7 +1191,7 @@ async function loadPlans() {
     const data = await res.json();
     const tbody = document.getElementById('plans-tbl-body');
     if (!data.success || !data.plans.length) {
-      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-soft)">No plans found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--text-soft)">No plans found.</td></tr>';
       return;
     }
     tbody.innerHTML = data.plans.map(p => `
@@ -1206,11 +1206,8 @@ async function loadPlans() {
         <td class="td-muted">${fmtAmt(p.min_amount)}</td>
         <td class="td-muted">${fmtAmt(p.max_amount)}</td>
         <td class="td-muted">${fmtAmt(p.cash_limit)}</td>
-        <td>
-          <span class="badge ${p.is_active ? 'badge-active' : 'badge-discontinued'}">
-            ${p.is_active ? 'Active' : 'Disabled'}
-          </span>
-        </td>
+        <td style="text-align:center">${p.is_default ? '<span class="badge badge-active">⭐ Default</span>' : '<span style="color:var(--text-soft);font-size:12px">—</span>'}</td>
+        <td><span class="badge ${p.is_active ? 'badge-active' : 'badge-discontinued'}">${p.is_active ? 'Active' : 'Disabled'}</span></td>
         <td style="display:flex;gap:6px">
           <button class="btn btn-outline btn-sm" onclick="openPlanModal('${p.plan_id}')">Edit</button>
           <button class="btn btn-sm" style="background:${p.is_active ? 'var(--red-bg)' : 'var(--green-bg)'};color:${p.is_active ? 'var(--red)' : 'var(--green)'};border:none"
@@ -1228,7 +1225,6 @@ function openPlanModal(planId) {
   document.getElementById('pm-save-btn').textContent = planId ? 'Save Changes' : 'Create Plan';
 
   if (planId) {
-    // Find plan from table data — refetch to be safe
     fetch(API + '/api/gms/plans', { headers: { 'x-staff-token': _token } })
     .then(r => r.json())
     .then(data => {
@@ -1245,6 +1241,7 @@ function openPlanModal(planId) {
       document.getElementById('pm-min').value       = p.min_amount;
       document.getElementById('pm-max').value       = p.max_amount;
       document.getElementById('pm-cashlimit').value = p.cash_limit;
+      document.getElementById('pm-default').checked = p.is_default == 1;
     });
   } else {
     document.getElementById('pm-id').value        = '';
@@ -1258,6 +1255,7 @@ function openPlanModal(planId) {
     document.getElementById('pm-min').value       = '500';
     document.getElementById('pm-max').value       = '100000';
     document.getElementById('pm-cashlimit').value = '199999';
+    document.getElementById('pm-default').checked = false;
   }
   openModal('plan-modal');
 }
@@ -1275,6 +1273,7 @@ async function savePlan() {
     min_amount:          parseFloat(document.getElementById('pm-min').value) || 500,
     max_amount:          parseFloat(document.getElementById('pm-max').value) || 100000,
     cash_limit:          parseFloat(document.getElementById('pm-cashlimit').value) || 199999,
+    is_default:          document.getElementById('pm-default').checked ? 1 : 0,
     is_active:           1
   };
 
@@ -1311,14 +1310,10 @@ async function togglePlan(planId, currentActive) {
   const action = currentActive ? 'disable' : 'enable';
   if (!confirm(`Are you sure you want to ${action} this plan? ${currentActive ? 'It will be hidden from the enrolment form.' : 'It will appear on the enrolment form.'}`)) return;
   try {
-   // REPLACE WITH:
-const res  = await fetch(`${API}/api/gms/plans/${planId}/toggle`, {
-  method: 'PATCH', headers: { 'x-staff-token': _token }
-});
-console.log('[Toggle] Status:', res.status);
-const text = await res.text();
-console.log('[Toggle] Response:', text);
-const data = JSON.parse(text);
+    const res  = await fetch(`${API}/api/gms/plans/${planId}/toggle`, {
+      method: 'PATCH', headers: { 'x-staff-token': _token }
+    });
+    const data = await res.json();
     if (data.success) {
       showToast(`Plan ${data.is_active ? 'enabled' : 'disabled'}.`, 'ok');
       loadPlans();
