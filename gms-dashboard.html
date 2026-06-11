@@ -398,6 +398,9 @@ tr:hover td{background:#fdf8f5;}
       <div class="nav-item admin-only" onclick="showPage('audit')">
         <span class="nav-icon">🔍</span> Audit Log
       </div>
+      <div class="nav-item admin-only" onclick="showPage('plans')">
+        <span class="nav-icon">📋</span> Plan Management
+      </div>
       <div class="nav-item" onclick="showPage('drafts')">
         <span class="nav-icon">⏳</span> Draft Schemes <span id="draft-badge" style="background:var(--amber);color:#fff;border-radius:100px;font-size:9px;padding:1px 6px;margin-left:4px;display:none">0</span>
       </div>
@@ -658,7 +661,30 @@ tr:hover td{background:#fdf8f5;}
           </div>
         </div>
       </div>
-
+<!-- ══ PAGE: PLAN MANAGEMENT (Admin only) ══ -->
+<div class="page" id="page-plans">
+  <div class="page-hdr-row">
+    <div class="page-hdr">
+      <div class="page-title">Plan Management</div>
+      <div class="page-sub">Manage GMS scheme plans — tenure, instalments, bonus %</div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="openPlanModal()">+ Add New Plan</button>
+  </div>
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Plan ID</th><th>Name</th><th>Tenure</th><th>Pay Months</th>
+          <th>Bullion %</th><th>Ornaments %</th><th>Diamond %</th>
+          <th>Min ₹</th><th>Max ₹</th><th>Cash Limit</th><th>Status</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="plans-tbl-body">
+          <tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-soft)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
     </main>
   </div>
 </div>
@@ -997,7 +1023,73 @@ tr:hover td{background:#fdf8f5;}
     </div>
   </div>
 </div>
-
+<!-- ══ MODAL: PLAN ══ -->
+<div class="modal-backdrop" id="plan-modal" onclick="onBdClick(event,'plan-modal')">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div class="modal-title" id="plan-modal-title">Add Plan</div>
+      <button class="modal-close" onclick="closeModal('plan-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="fg">
+          <label>Plan ID *</label>
+          <input type="text" id="pm-id" placeholder="e.g. plan_11m">
+        </div>
+        <div class="fg">
+          <label>Name *</label>
+          <input type="text" id="pm-name" placeholder="e.g. 11 Month Scheme">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="fg">
+          <label>Tenure (months) *</label>
+          <input type="number" id="pm-tenure" placeholder="e.g. 11" min="1">
+        </div>
+        <div class="fg">
+          <label>Pay Months *</label>
+          <input type="number" id="pm-paymo" placeholder="e.g. 10" min="1">
+        </div>
+      </div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-soft);margin-bottom:8px">Bonus Percentage</div>
+      <div class="form-row">
+        <div class="fg">
+          <label>🪙 Bullion %</label>
+          <input type="number" id="pm-bullion" placeholder="e.g. 60" min="0">
+        </div>
+        <div class="fg">
+          <label>✦ Ornaments %</label>
+          <input type="number" id="pm-ornaments" placeholder="e.g. 75" min="0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="fg">
+          <label>💎 Diamond %</label>
+          <input type="number" id="pm-diamond" placeholder="e.g. 100" min="0">
+        </div>
+        <div class="fg">
+          <label>Cash Limit ₹</label>
+          <input type="number" id="pm-cashlimit" placeholder="199999" min="0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="fg">
+          <label>Min Amount ₹</label>
+          <input type="number" id="pm-min" placeholder="500" min="0">
+        </div>
+        <div class="fg">
+          <label>Max Amount ₹</label>
+          <input type="number" id="pm-max" placeholder="100000" min="0">
+        </div>
+      </div>
+      <input type="hidden" id="pm-editing-id">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('plan-modal')">Cancel</button>
+      <button class="btn btn-primary" id="pm-save-btn" onclick="savePlan()">Save Plan</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1086,7 +1178,145 @@ async function doLogin() {
     btn.disabled = false; btn.textContent = 'Login →';
   }
 }
+// ── Plan Management ───────────────────────────────────────
+async function loadPlans() {
+  try {
+    const res  = await fetch(API + '/api/gms/plans', { headers: { 'x-staff-token': _token } });
+    const data = await res.json();
+    const tbody = document.getElementById('plans-tbl-body');
+    if (!data.success || !data.plans.length) {
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-soft)">No plans found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.plans.map(p => `
+      <tr>
+        <td class="td-id">${p.plan_id}</td>
+        <td class="td-name">${p.name}</td>
+        <td style="text-align:center">${p.tenure}m</td>
+        <td style="text-align:center">${p.pay_months}</td>
+        <td style="text-align:center;color:var(--amber)">${p.bonus_pct_bullion}%</td>
+        <td style="text-align:center;color:var(--amber)">${p.bonus_pct_ornaments}%</td>
+        <td style="text-align:center;color:var(--amber)">${p.bonus_pct_diamond}%</td>
+        <td class="td-muted">${fmtAmt(p.min_amount)}</td>
+        <td class="td-muted">${fmtAmt(p.max_amount)}</td>
+        <td class="td-muted">${fmtAmt(p.cash_limit)}</td>
+        <td>
+          <span class="badge ${p.is_active ? 'badge-active' : 'badge-discontinued'}">
+            ${p.is_active ? 'Active' : 'Disabled'}
+          </span>
+        </td>
+        <td style="display:flex;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="openPlanModal('${p.plan_id}')">Edit</button>
+          <button class="btn btn-sm" style="background:${p.is_active ? 'var(--red-bg)' : 'var(--green-bg)'};color:${p.is_active ? 'var(--red)' : 'var(--green)'};border:none"
+            onclick="togglePlan('${p.plan_id}', ${p.is_active})">
+            ${p.is_active ? 'Disable' : 'Enable'}
+          </button>
+        </td>
+      </tr>`).join('');
+  } catch(e) { console.error('loadPlans error:', e); }
+}
 
+function openPlanModal(planId) {
+  document.getElementById('pm-editing-id').value = planId || '';
+  document.getElementById('plan-modal-title').textContent = planId ? 'Edit Plan' : 'Add New Plan';
+  document.getElementById('pm-save-btn').textContent = planId ? 'Save Changes' : 'Create Plan';
+
+  if (planId) {
+    // Find plan from table data — refetch to be safe
+    fetch(API + '/api/gms/plans', { headers: { 'x-staff-token': _token } })
+    .then(r => r.json())
+    .then(data => {
+      const p = data.plans.find(x => x.plan_id === planId);
+      if (!p) return;
+      document.getElementById('pm-id').value        = p.plan_id;
+      document.getElementById('pm-id').readOnly     = true;
+      document.getElementById('pm-name').value      = p.name;
+      document.getElementById('pm-tenure').value    = p.tenure;
+      document.getElementById('pm-paymo').value     = p.pay_months;
+      document.getElementById('pm-bullion').value   = p.bonus_pct_bullion;
+      document.getElementById('pm-ornaments').value = p.bonus_pct_ornaments;
+      document.getElementById('pm-diamond').value   = p.bonus_pct_diamond;
+      document.getElementById('pm-min').value       = p.min_amount;
+      document.getElementById('pm-max').value       = p.max_amount;
+      document.getElementById('pm-cashlimit').value = p.cash_limit;
+    });
+  } else {
+    document.getElementById('pm-id').value        = '';
+    document.getElementById('pm-id').readOnly     = false;
+    document.getElementById('pm-name').value      = '';
+    document.getElementById('pm-tenure').value    = '';
+    document.getElementById('pm-paymo').value     = '';
+    document.getElementById('pm-bullion').value   = '';
+    document.getElementById('pm-ornaments').value = '';
+    document.getElementById('pm-diamond').value   = '';
+    document.getElementById('pm-min').value       = '500';
+    document.getElementById('pm-max').value       = '100000';
+    document.getElementById('pm-cashlimit').value = '199999';
+  }
+  openModal('plan-modal');
+}
+
+async function savePlan() {
+  const editingId = document.getElementById('pm-editing-id').value;
+  const body = {
+    plan_id:             document.getElementById('pm-id').value.trim(),
+    name:                document.getElementById('pm-name').value.trim(),
+    tenure:              parseInt(document.getElementById('pm-tenure').value),
+    pay_months:          parseInt(document.getElementById('pm-paymo').value),
+    bonus_pct_bullion:   parseInt(document.getElementById('pm-bullion').value) || 0,
+    bonus_pct_ornaments: parseInt(document.getElementById('pm-ornaments').value) || 0,
+    bonus_pct_diamond:   parseInt(document.getElementById('pm-diamond').value) || 0,
+    min_amount:          parseFloat(document.getElementById('pm-min').value) || 500,
+    max_amount:          parseFloat(document.getElementById('pm-max').value) || 100000,
+    cash_limit:          parseFloat(document.getElementById('pm-cashlimit').value) || 199999,
+    is_active:           1
+  };
+
+  if (!body.plan_id || !body.name || !body.tenure || !body.pay_months) {
+    showToast('Fill all required fields.', 'error'); return;
+  }
+
+  const btn = document.getElementById('pm-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  try {
+    const url    = editingId ? `${API}/api/gms/plans/${editingId}` : `${API}/api/gms/plans`;
+    const method = editingId ? 'PUT' : 'POST';
+    const res    = await fetch(url, {
+      method, headers: { 'Content-Type': 'application/json', 'x-staff-token': _token },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = editingId ? 'Save Changes' : 'Create Plan';
+    if (data.success) {
+      closeModal('plan-modal');
+      showToast(data.message, 'ok');
+      loadPlans();
+    } else {
+      showToast(data.message || 'Failed.', 'error');
+    }
+  } catch(e) {
+    btn.disabled = false;
+    showToast('Connection error.', 'error');
+  }
+}
+
+async function togglePlan(planId, currentActive) {
+  const action = currentActive ? 'disable' : 'enable';
+  if (!confirm(`Are you sure you want to ${action} this plan? ${currentActive ? 'It will be hidden from the enrolment form.' : 'It will appear on the enrolment form.'}`)) return;
+  try {
+    const res  = await fetch(`${API}/api/gms/plans/${planId}/toggle`, {
+      method: 'PATCH', headers: { 'x-staff-token': _token }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Plan ${data.is_active ? 'enabled' : 'disabled'}.`, 'ok');
+      loadPlans();
+    } else {
+      showToast(data.message || 'Failed.', 'error');
+    }
+  } catch(e) { showToast('Connection error.', 'error'); }
+}
 // REPLACE WITH:
 function doLogout() {
   _token = _role = _branch = _uname = null;
@@ -1143,11 +1373,12 @@ if (reportFilter && _role !== 'admin') {
  loadEnrolments().then(() => loadOverview());
   if (_role === 'admin') {
     loadUsers();
-    loadHalfReg();
-    loadAuditLog();
-    loadReports();
-    loadDrafts();
-    loadDiscRequests();
+  loadHalfReg();
+  loadAuditLog();
+  loadReports();
+  loadDrafts();
+  loadDiscRequests();
+  loadPlans();
   } else {
     loadReports();
     loadDrafts();
@@ -2351,6 +2582,8 @@ function togglePassVis() {
     eye.textContent = '👁';
   }
 }
+
+
 </script>
 </body>
 </html>
