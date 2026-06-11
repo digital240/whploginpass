@@ -1305,10 +1305,14 @@ async function togglePlan(planId, currentActive) {
   const action = currentActive ? 'disable' : 'enable';
   if (!confirm(`Are you sure you want to ${action} this plan? ${currentActive ? 'It will be hidden from the enrolment form.' : 'It will appear on the enrolment form.'}`)) return;
   try {
-    const res  = await fetch(`${API}/api/gms/plans/${planId}/toggle`, {
-      method: 'PATCH', headers: { 'x-staff-token': _token }
-    });
-    const data = await res.json();
+   // REPLACE WITH:
+const res  = await fetch(`${API}/api/gms/plans/${planId}/toggle`, {
+  method: 'PATCH', headers: { 'x-staff-token': _token }
+});
+console.log('[Toggle] Status:', res.status);
+const text = await res.text();
+console.log('[Toggle] Response:', text);
+const data = JSON.parse(text);
     if (data.success) {
       showToast(`Plan ${data.is_active ? 'enabled' : 'disabled'}.`, 'ok');
       loadPlans();
