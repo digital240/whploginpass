@@ -137,5 +137,62 @@ module.exports = function(app, cache) {
   app.get('/whp_admin',   (req, res) => res.sendFile(DASHBOARD_PATH));
   app.get('/whp_admin/*', (req, res) => res.sendFile(DASHBOARD_PATH));
 
+// REPLACE WITH:
+  // ── GET /api/gms/plans ───────────────────────────────
+  app.get('/api/gms/plans', async (req, res) => {
+    try {
+      const db = require('../db');
+      const [rows] = await db.query('SELECT * FROM gms_plans ORDER BY tenure ASC');
+      return res.json({ success: true, plans: rows });
+    } catch(err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── POST /api/gms/plans ──────────────────────────────
+  app.post('/api/gms/plans', staffAuth, adminOnly, async (req, res) => {
+    try {
+      const db = require('../db');
+      const { plan_id, name, tenure, pay_months, bonus_pct_bullion, bonus_pct_ornaments, bonus_pct_diamond, min_amount, max_amount, cash_limit } = req.body;
+      if (!plan_id || !name || !tenure || !pay_months) return res.status(400).json({ success: false, message: 'Missing required fields.' });
+      const [existing] = await db.query('SELECT plan_id FROM gms_plans WHERE plan_id=?', [plan_id]);
+      if (existing.length) return res.status(400).json({ success: false, message: 'Plan ID already exists.' });
+      await db.query(
+        'INSERT INTO gms_plans (plan_id, name, tenure, pay_months, bonus_pct_bullion, bonus_pct_ornaments, bonus_pct_diamond, min_amount, max_amount, cash_limit, is_active) VALUES (?,?,?,?,?,?,?,?,?,?,1)',
+        [plan_id, name, tenure, pay_months, bonus_pct_bullion||0, bonus_pct_ornaments||0, bonus_pct_diamond||0, min_amount||500, max_amount||100000, cash_limit||199999]
+      );
+      return res.json({ success: true, message: 'Plan created.' });
+    } catch(err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── PUT /api/gms/plans/:id ───────────────────────────
+  app.put('/api/gms/plans/:id', staffAuth, adminOnly, async (req, res) => {
+    try {
+      const db = require('../db');
+      const { name, tenure, pay_months, bonus_pct_bullion, bonus_pct_ornaments, bonus_pct_diamond, min_amount, max_amount, cash_limit, is_active } = req.body;
+      await db.query(
+        `UPDATE gms_plans SET name=?, tenure=?, pay_months=?, bonus_pct_bullion=?, bonus_pct_ornaments=?, bonus_pct_diamond=?, min_amount=?, max_amount=?, cash_limit=?, is_active=? WHERE plan_id=?`,
+        [name, tenure, pay_months, bonus_pct_bullion, bonus_pct_ornaments, bonus_pct_diamond, min_amount, max_amount, cash_limit, is_active, req.params.id]
+      );
+      return res.json({ success: true, message: 'Plan updated.' });
+    } catch(err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // ── PATCH /api/gms/plans/:id/toggle ─────────────────
+  app.patch('/api/gms/plans/:id/toggle', staffAuth, adminOnly, async (req, res) => {
+    try {
+      const db = require('../db');
+      await db.query('UPDATE gms_plans SET is_active = NOT is_active WHERE plan_id=?', [req.params.id]);
+      const [rows] = await db.query('SELECT is_active FROM gms_plans WHERE plan_id=?', [req.params.id]);
+      return res.json({ success: true, is_active: rows[0]?.is_active });
+    } catch(err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   console.log('[GMS] Admin routes loaded');
 };
