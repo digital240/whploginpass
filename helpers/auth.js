@@ -4,7 +4,8 @@ const db     = require('../db');
 
 // ── Staff token ───────────────────────────────────────────
 function createStaffToken(username, role, branch, name) {
-  const payload = JSON.stringify({ username, role, branch, name, exp: Date.now() + 8*3600*1000 });
+ const payload = JSON.stringify({ username, role, branch, name, exp: Date.now() + 24*3600*1000 });
+
   const encoded = Buffer.from(payload).toString('base64url');
   const sig     = crypto.createHmac('sha256', process.env.GMS_ADMIN_PASS || 'whp_2026_gms').update(encoded).digest('hex').slice(0,16);
   return encoded + '.' + sig;
