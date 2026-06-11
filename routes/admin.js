@@ -171,11 +171,16 @@ module.exports = function(app, cache) {
   app.put('/api/gms/plans/:id', staffAuth, adminOnly, async (req, res) => {
     try {
       const db = require('../db');
-      const { name, tenure, pay_months, bonus_pct_bullion, bonus_pct_ornaments, bonus_pct_diamond, min_amount, max_amount, cash_limit, is_active } = req.body;
-      await db.query(
-        `UPDATE gms_plans SET name=?, tenure=?, pay_months=?, bonus_pct_bullion=?, bonus_pct_ornaments=?, bonus_pct_diamond=?, min_amount=?, max_amount=?, cash_limit=?, is_active=? WHERE plan_id=?`,
-        [name, tenure, pay_months, bonus_pct_bullion, bonus_pct_ornaments, bonus_pct_diamond, min_amount, max_amount, cash_limit, is_active, req.params.id]
-      );
+      // REPLACE WITH:
+const { name, tenure, pay_months, bonus_pct_bullion, bonus_pct_ornaments, bonus_pct_diamond, min_amount, max_amount, cash_limit, is_active, is_default } = req.body;
+// If setting as default — clear other defaults first
+if (is_default) {
+  await db.query('UPDATE gms_plans SET is_default = 0');
+}
+await db.query(
+  `UPDATE gms_plans SET name=?, tenure=?, pay_months=?, bonus_pct_bullion=?, bonus_pct_ornaments=?, bonus_pct_diamond=?, min_amount=?, max_amount=?, cash_limit=?, is_active=?, is_default=? WHERE plan_id=?`,
+  [name, tenure, pay_months, bonus_pct_bullion, bonus_pct_ornaments, bonus_pct_diamond, min_amount, max_amount, cash_limit, is_active, is_default ? 1 : 0, req.params.id]
+);
       return res.json({ success: true, message: 'Plan updated.' });
     } catch(err) {
       return res.status(500).json({ success: false, message: err.message });
