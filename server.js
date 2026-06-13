@@ -75,6 +75,11 @@ require('./routes/mobile-shop')(app, cache);
 // ── Payment reminders + pay-now routes ──────────────────
 require('./routes/payments-reminder')(app, cache);
 
+// ── Appointment booking routes ──────────────────────────   ← ADD HERE
+const appointmentRoutes = require('./routes/appointments');
+appointmentRoutes.init(cache);
+app.use('/api/appointments', appointmentRoutes);
+
 // ── Legacy WLP routes (keep working) ────────────────────
 require('./wlp-routes')(app, cache);
 
