@@ -51,6 +51,7 @@ const otpLimiter = rateLimit({
 });
 app.use('/api/send-otp',     otpLimiter);
 app.use('/api/gms/send-otp', otpLimiter);
+app.use('/api/gms/send-otp', otpLimiter);
 
 // ── Admin dashboard ───────────────────────────────────────
 app.get('/whp_admin', (req, res) => {
