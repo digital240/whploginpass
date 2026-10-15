@@ -52,6 +52,7 @@ const otpLimiter = rateLimit({
 app.use('/api/send-otp',     otpLimiter);
 app.use('/api/gms/send-otp', otpLimiter);
 app.use('/api/appointments/send-otp', otpLimiter);  
+app.use('/api/franchise/send-otp', otpLimiter);
 
 // ── Admin dashboard ───────────────────────────────────────
 app.get('/whp_admin', (req, res) => {
@@ -72,6 +73,7 @@ require('./routes/user-auth')(app, cache);
 require('./routes/user-profile')(app, cache);
 require('./routes/app-auth')(app, cache);
 require('./routes/mobile-shop')(app, cache);
+require('./routes/franchise')(app, cache);
 
 // ── Payment reminders + pay-now routes ──────────────────
 require('./routes/payments-reminder')(app, cache);
